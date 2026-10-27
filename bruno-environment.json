@@ -1,0 +1,27 @@
+{
+  "id": "m11-local",
+  "name": "M11 Local",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "enabled": true
+    },
+    {
+      "key": "purchaseOrderId",
+      "value": "PO-2026-001",
+      "enabled": true
+    },
+    {
+      "key": "itemId",
+      "value": "ITEM-101",
+      "enabled": true
+    },
+    {
+      "key": "receiptNo",
+      "value": "SJ-2026-001",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}
