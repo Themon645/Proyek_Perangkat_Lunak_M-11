@@ -1,0 +1,11 @@
+.env
+.env.*
+
+bin/
+dist/
+
+.idea/
+.vscode/
+*.iml
+
+coverage.out

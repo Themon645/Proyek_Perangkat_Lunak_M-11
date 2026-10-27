@@ -11,8 +11,11 @@ import (
 	"gorm.io/gorm"
 	"m11/application"
 	"m11/common"
+	"m11/common/helper"
 	"m11/dto"
 	"m11/model"
+
+	"github.com/google/uuid"
 )
 
 type PurchaseOrderController struct {
@@ -68,18 +71,22 @@ func (c *PurchaseOrderController) create(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	poUUID := uuid.New()
 	items := make([]model.PurchaseOrderItem, len(req.Items))
 	for i, item := range req.Items {
 		items[i] = model.PurchaseOrderItem{
-			ID: item.ID, PurchaseOrderID: req.ID, Name: item.Name,
+			ID: item.ID, PurchaseOrderUUID: poUUID, Name: item.Name,
 			Quantity: item.Quantity, UnitCost: item.UnitCost,
 		}
 	}
 	po := &model.PurchaseOrder{ID: req.ID, Supplier: req.Supplier, Status: req.Status, Payment: common.PaymentUnpaid, Items: items}
+	po.UUID = poUUID
 	if err := c.service.Create(po); err != nil {
+		helper.LogTransaction("ERROR", "PURCHASE_ORDER", "create failed: %v", err)
 		errorJSON(w, http.StatusConflict, "purchase order already exists")
 		return
 	}
+	helper.LogTransaction("CREATE", "PURCHASE_ORDER", "id=%s supplier=%s", po.ID, po.Supplier)
 	jsonResponse(w, http.StatusCreated, po)
 }
 
@@ -94,9 +101,11 @@ func (c *PurchaseOrderController) receive(w http.ResponseWriter, r *http.Request
 	}
 	po, err := c.service.Receive(id, received)
 	if err != nil {
+		helper.LogTransaction("ERROR", "PURCHASE_ORDER", "receive failed id=%s: %v", id, err)
 		c.repositoryError(w, err)
 		return
 	}
+	helper.LogTransaction("UPDATE", "PURCHASE_ORDER", "received id=%s", id)
 	jsonResponse(w, http.StatusOK, po)
 }
 
@@ -107,9 +116,11 @@ func (c *PurchaseOrderController) pay(w http.ResponseWriter, r *http.Request, id
 	}
 	po, err := c.service.Pay(id, req.Proof)
 	if err != nil {
+		helper.LogTransaction("ERROR", "PAYMENT", "payment failed id=%s: %v", id, err)
 		c.repositoryError(w, err)
 		return
 	}
+	helper.LogTransaction("UPDATE", "PAYMENT", "paid purchase_order_id=%s", id)
 	jsonResponse(w, http.StatusOK, po)
 }
 

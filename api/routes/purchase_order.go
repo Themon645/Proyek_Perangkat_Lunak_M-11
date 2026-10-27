@@ -7,9 +7,11 @@ import (
 	"m11/controller"
 )
 
-func RegisterPurchaseOrderRoutes(mux *http.ServeMux, service *application.PurchaseOrderService) {
+func RegisterPurchaseOrderRoutes(route *http.ServeMux, service *application.PurchaseOrderService) {
 	handler := controller.NewPurchaseOrderController(service)
-	mux.Handle("/purchase-orders", handler)
-	mux.Handle("/purchase-orders/", handler)
-	mux.Handle("/reports/procurement", handler)
+	receiptHandler := controller.NewGoodsReceiptController(service)
+	route.Handle("/purchase-orders", handler)
+	route.Handle("/purchase-orders/", handler)
+	route.Handle("/reports/procurement", handler)
+	route.Handle("/goods-receipts", receiptHandler)
 }

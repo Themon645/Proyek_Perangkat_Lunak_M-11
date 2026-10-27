@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 	"m11/common"
+	"m11/dto"
 	"m11/model"
 )
 
@@ -52,7 +53,7 @@ func (r *PurchaseOrderRepository) Receive(id string, received map[string]int) (*
 		}
 		for itemID, quantity := range received {
 			items[itemID].Received += quantity
-			if err := tx.Model(&model.PurchaseOrderItem{}).Where("id = ?", itemID).
+			if err := tx.Model(&model.PurchaseOrderItem{}).Where("uuid = ?", items[itemID].UUID).
 				Update("received", items[itemID].Received).Error; err != nil {
 				return err
 			}
@@ -76,6 +77,70 @@ func (r *PurchaseOrderRepository) Receive(id string, received map[string]int) (*
 		return nil, err
 	}
 	return r.Find(id)
+}
+
+func (r *PurchaseOrderRepository) CreateGoodsReceipt(req *dto.CreateGoodsReceiptRequest, receivedDate time.Time) (*model.GoodsReceipt, error) {
+	var receipt model.GoodsReceipt
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var po model.PurchaseOrder
+		if err := tx.Preload("Items").First(&po, "id = ?", req.PurchaseOrderID).Error; err != nil {
+			return err
+		}
+		if po.Status != common.StatusApproved && po.Status != common.StatusReceivedPartial {
+			return errors.New("purchase order must be approved")
+		}
+
+		items := make(map[string]*model.PurchaseOrderItem, len(po.Items))
+		for i := range po.Items {
+			items[po.Items[i].ID] = &po.Items[i]
+		}
+		receipt = model.GoodsReceipt{
+			ReceiptNo:         req.ReceiptNo,
+			PurchaseOrderUUID: po.UUID,
+			ReceivedDate:      receivedDate,
+			Receiver:          req.Receiver,
+			Notes:             req.Notes,
+			Items:             make([]model.GoodsReceiptItem, 0, len(req.Items)),
+		}
+		if err := tx.Create(&receipt).Error; err != nil {
+			return err
+		}
+		for _, item := range req.Items {
+			orderItem, ok := items[item.ItemID]
+			if !ok || orderItem.Received+item.QtyReceived > orderItem.Quantity {
+				return errors.New("received quantity exceeds ordered quantity")
+			}
+			orderItem.Received += item.QtyReceived
+			if err := tx.Model(&model.PurchaseOrderItem{}).Where("id = ?", item.ItemID).
+				Update("received", orderItem.Received).Error; err != nil {
+				return err
+			}
+			if err := tx.Create(&model.GoodsReceiptItem{
+				ReceiptUUID: receipt.UUID, ItemUUID: orderItem.UUID, QtyReceived: item.QtyReceived,
+			}).Error; err != nil {
+				return err
+			}
+			receipt.Items = append(receipt.Items, model.GoodsReceiptItem{
+				ReceiptUUID: receipt.UUID, ItemUUID: orderItem.UUID, QtyReceived: item.QtyReceived,
+			})
+		}
+		complete := true
+		for _, item := range items {
+			if item.Received < item.Quantity {
+				complete = false
+				break
+			}
+		}
+		status := common.StatusReceivedPartial
+		if complete {
+			status = common.StatusReceived
+		}
+		return tx.Model(&po).Update("status", status).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &receipt, nil
 }
 
 func (r *PurchaseOrderRepository) Pay(id, proof string) (*model.PurchaseOrder, error) {

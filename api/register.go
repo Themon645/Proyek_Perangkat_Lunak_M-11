@@ -8,7 +8,7 @@ import (
 )
 
 func Register(service *application.PurchaseOrderService) http.Handler {
-	mux := http.NewServeMux()
-	routes.RegisterPurchaseOrderRoutes(mux, service)
-	return mux
+	route := http.NewServeMux()
+	routes.RegisterPurchaseOrderRoutes(route, service)
+	return route
 }

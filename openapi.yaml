@@ -1,0 +1,406 @@
+openapi: 3.0.3
+info:
+  title: M11 Procurement API
+  description: API Purchase Order, Goods Receipt, dan pembayaran supplier.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+
+tags:
+  - name: Purchase Orders
+  - name: Goods Receipts
+  - name: Reports
+
+paths:
+  /purchase-orders:
+    post:
+      tags: [Purchase Orders]
+      summary: Membuat purchase order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePurchaseOrderRequest'
+            example:
+              id: PO-2026-001
+              supplier: PT Contoh Supplier
+              status: approved
+              items:
+                - id: ITEM-001
+                  name: Kertas HVS A4
+                  quantity: 100
+                  unit_cost: 50000
+      responses:
+        '201':
+          description: Purchase order berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /purchase-orders/{id}/receipts:
+    post:
+      tags: [Purchase Orders]
+      summary: Mencatat penerimaan barang langsung ke purchase order
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceivePurchaseOrderRequest'
+            example:
+              items:
+                - id: ITEM-001
+                  quantity: 50
+      responses:
+        '200':
+          description: Penerimaan berhasil dicatat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /purchase-orders/{id}/payment:
+    post:
+      tags: [Purchase Orders]
+      summary: Mencatat pembayaran purchase order
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayPurchaseOrderRequest'
+            example:
+              proof: transfer-2026-001
+      responses:
+        '200':
+          description: Pembayaran berhasil dicatat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /purchase-orders/unpaid:
+    get:
+      tags: [Purchase Orders]
+      summary: Mendapatkan purchase order yang belum lunas
+      responses:
+        '200':
+          description: Daftar tagihan belum lunas
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [purchase_orders, total]
+                properties:
+                  purchase_orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UnpaidPurchaseOrder'
+                  total:
+                    type: integer
+                    format: int64
+
+  /goods-receipts:
+    post:
+      tags: [Goods Receipts]
+      summary: Membuat goods receipt (GRN)
+      description: Menyimpan GRN dan memperbarui status serta jumlah diterima pada purchase order dalam satu transaksi.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGoodsReceiptRequest'
+            example:
+              purchase_order_id: PO-2026-001
+              receipt_no: SJ-2026-001
+              received_date: '2026-10-27'
+              receiver: Petugas Gudang
+              notes: Barang diterima dalam kondisi baik
+              items:
+                - item_id: ITEM-001
+                  qty_received: 50
+      responses:
+        '201':
+          description: Goods receipt berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /reports/procurement:
+    get:
+      tags: [Reports]
+      summary: Mendapatkan laporan procurement
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: '2026-10-01'
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: '2026-10-31'
+      responses:
+        '200':
+          description: Laporan procurement
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, suppliers]
+                properties:
+                  from:
+                    type: string
+                    format: date
+                  to:
+                    type: string
+                    format: date
+                  suppliers:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                      format: int64
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  parameters:
+    PurchaseOrderId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      example: PO-2026-001
+
+  schemas:
+    CreatePurchaseOrderRequest:
+      type: object
+      required: [supplier, items]
+      properties:
+        id:
+          type: string
+        supplier:
+          type: string
+        status:
+          type: string
+          example: pending
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CreatePurchaseOrderItem'
+
+    CreatePurchaseOrderItem:
+      type: object
+      required: [id, quantity, unit_cost]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        unit_cost:
+          type: integer
+          format: int64
+          minimum: 0
+
+    PurchaseOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        supplier:
+          type: string
+        status:
+          type: string
+        payment:
+          type: string
+        proof:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOrderItem'
+
+    PurchaseOrderItem:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+        unit_cost:
+          type: integer
+          format: int64
+        received:
+          type: integer
+
+    ReceivePurchaseOrderRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [id, quantity]
+            properties:
+              id:
+                type: string
+              quantity:
+                type: integer
+                minimum: 1
+
+    PayPurchaseOrderRequest:
+      type: object
+      required: [proof]
+      properties:
+        proof:
+          type: string
+          minLength: 1
+
+    CreateGoodsReceiptRequest:
+      type: object
+      required: [purchase_order_id, receipt_no, received_date, items]
+      properties:
+        purchase_order_id:
+          type: string
+        receipt_no:
+          type: string
+        received_date:
+          type: string
+          format: date
+        receiver:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [item_id, qty_received]
+            properties:
+              item_id:
+                type: string
+              qty_received:
+                type: integer
+                minimum: 1
+
+    GoodsReceipt:
+      type: object
+      properties:
+        receipt_no:
+          type: string
+        purchase_order_id:
+          type: string
+        received_date:
+          type: string
+          format: date-time
+        receiver:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoodsReceiptItem'
+
+    GoodsReceiptItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        receipt_no:
+          type: string
+        item_id:
+          type: string
+        qty_received:
+          type: integer
+
+    UnpaidPurchaseOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        supplier:
+          type: string
+        total:
+          type: integer
+          format: int64
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Request tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Konflik status atau data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Data tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: Kesalahan server
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
