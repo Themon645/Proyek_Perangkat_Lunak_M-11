@@ -4,8 +4,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"m11/common"
+	"m11/common/validation"
 	"m11/dto"
 	"m11/model"
 )
@@ -32,6 +34,21 @@ func (r *PurchaseOrderRepository) Find(id string) (*model.PurchaseOrder, error) 
 	return &po, nil
 }
 
+func (r *PurchaseOrderRepository) ReceiptHistory(id string) (*model.PurchaseOrder, []model.GoodsReceipt, error) {
+	var po model.PurchaseOrder
+	if err := r.db.First(&po, "id = ?", id).Error; err != nil {
+		return nil, nil, err
+	}
+	var receipts []model.GoodsReceipt
+	if err := r.db.Preload("Items.Item").
+		Where("purchase_order_uuid = ?", po.UUID).
+		Order("received_date ASC, created_at ASC").
+		Find(&receipts).Error; err != nil {
+		return nil, nil, err
+	}
+	return &po, receipts, nil
+}
+
 func (r *PurchaseOrderRepository) Receive(id string, received map[string]int) (*model.PurchaseOrder, error) {
 	var po model.PurchaseOrder
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -47,8 +64,11 @@ func (r *PurchaseOrderRepository) Receive(id string, received map[string]int) (*
 		}
 		for itemID, quantity := range received {
 			item, ok := items[itemID]
-			if !ok || quantity <= 0 || item.Received+quantity > item.Quantity {
+			if !ok || quantity <= 0 {
 				return errors.New("received quantity exceeds ordered quantity")
+			}
+			if err := validation.ValidatePartialQuantity(item.Quantity, item.Received, quantity); err != nil {
+				return err
 			}
 		}
 		for itemID, quantity := range received {
@@ -94,6 +114,10 @@ func (r *PurchaseOrderRepository) CreateGoodsReceipt(req *dto.CreateGoodsReceipt
 		for i := range po.Items {
 			items[po.Items[i].ID] = &po.Items[i]
 		}
+		totals, err := receiptTotals(tx, po.Items)
+		if err != nil {
+			return err
+		}
 		receipt = model.GoodsReceipt{
 			ReceiptNo:         req.ReceiptNo,
 			PurchaseOrderUUID: po.UUID,
@@ -107,12 +131,10 @@ func (r *PurchaseOrderRepository) CreateGoodsReceipt(req *dto.CreateGoodsReceipt
 		}
 		for _, item := range req.Items {
 			orderItem, ok := items[item.ItemID]
-			if !ok || orderItem.Received+item.QtyReceived > orderItem.Quantity {
+			if !ok {
 				return errors.New("received quantity exceeds ordered quantity")
 			}
-			orderItem.Received += item.QtyReceived
-			if err := tx.Model(&model.PurchaseOrderItem{}).Where("id = ?", item.ItemID).
-				Update("received", orderItem.Received).Error; err != nil {
+			if err := validation.ValidatePartialQuantity(orderItem.Quantity, totals[orderItem.UUID], item.QtyReceived); err != nil {
 				return err
 			}
 			if err := tx.Create(&model.GoodsReceiptItem{
@@ -124,11 +146,19 @@ func (r *PurchaseOrderRepository) CreateGoodsReceipt(req *dto.CreateGoodsReceipt
 				ReceiptUUID: receipt.UUID, ItemUUID: orderItem.UUID, QtyReceived: item.QtyReceived,
 			})
 		}
+		totals, err = receiptTotals(tx, po.Items)
+		if err != nil {
+			return err
+		}
 		complete := true
 		for _, item := range items {
+			item.Received = totals[item.UUID]
+			if err := tx.Model(&model.PurchaseOrderItem{}).Where("uuid = ?", item.UUID).
+				Update("received", item.Received).Error; err != nil {
+				return err
+			}
 			if item.Received < item.Quantity {
 				complete = false
-				break
 			}
 		}
 		status := common.StatusReceivedPartial
@@ -143,15 +173,62 @@ func (r *PurchaseOrderRepository) CreateGoodsReceipt(req *dto.CreateGoodsReceipt
 	return &receipt, nil
 }
 
-func (r *PurchaseOrderRepository) Pay(id, proof string) (*model.PurchaseOrder, error) {
-	var po model.PurchaseOrder
-	if err := r.db.Preload("Items").First(&po, "id = ?", id).Error; err != nil {
+type receiptTotal struct {
+	ItemUUID string
+	Total    int
+}
+
+func receiptTotals(tx *gorm.DB, items []model.PurchaseOrderItem) (map[uuid.UUID]int, error) {
+	ids := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.UUID)
+	}
+	var rows []receiptTotal
+	if err := tx.Model(&model.GoodsReceiptItem{}).
+		Select("item_uuid, COALESCE(SUM(qty_received), 0) AS total").
+		Where("item_uuid IN ?", ids).
+		Group("item_uuid").
+		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	if po.Status != common.StatusReceived && po.Status != common.StatusReceivedPartial {
-		return nil, errors.New("purchase order must be received before payment")
+	totals := make(map[uuid.UUID]int, len(rows))
+	for _, row := range rows {
+		id, err := uuid.Parse(row.ItemUUID)
+		if err != nil {
+			return nil, err
+		}
+		totals[id] = row.Total
 	}
-	if err := r.db.Model(&po).Updates(map[string]any{"payment": common.PaymentPaid, "proof": proof}).Error; err != nil {
+	return totals, nil
+}
+
+func (r *PurchaseOrderRepository) Pay(id, proof string) (*model.PurchaseOrder, error) {
+	var po model.PurchaseOrder
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Preload("Items").First(&po, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if po.Status != common.StatusReceived && po.Status != common.StatusReceivedPartial {
+			return errors.New("purchase order must be received before payment")
+		}
+		var amount int64
+		for _, item := range po.Items {
+			amount += int64(item.Received) * item.UnitCost
+		}
+		if err := tx.Model(&po).Updates(map[string]any{"payment": common.PaymentPaid, "proof": proof}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.PaymentRecord{
+			PurchaseOrderUUID: po.UUID,
+			Amount:            amount,
+			PaidAt:            time.Now().UTC(),
+			ProofPath:         proof,
+		}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	po.Payment, po.Proof = common.PaymentPaid, proof

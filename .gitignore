@@ -9,3 +9,5 @@ dist/
 *.iml
 
 coverage.out
+bruno
+storage/payment-proofs/

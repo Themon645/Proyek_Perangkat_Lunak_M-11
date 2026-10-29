@@ -45,6 +45,21 @@ paths:
           $ref: '#/components/responses/Conflict'
 
   /purchase-orders/{id}/receipts:
+    get:
+      tags: [Goods Receipts]
+      summary: Mendapatkan riwayat penerimaan purchase order
+      description: Mengembalikan seluruh tahapan penerimaan per tanggal dengan penerima dan rincian item.
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      responses:
+        '200':
+          description: Riwayat penerimaan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceiptHistory'
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       tags: [Purchase Orders]
       summary: Mencatat penerimaan barang langsung ke purchase order
@@ -83,6 +98,15 @@ paths:
       requestBody:
         required: true
         content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [proof]
+              properties:
+                proof:
+                  type: string
+                  format: binary
+                  description: Bukti pembayaran PDF, JPG, atau PNG; maksimal 5 MB.
           application/json:
             schema:
               $ref: '#/components/schemas/PayPurchaseOrderRequest'
@@ -97,6 +121,8 @@ paths:
                 $ref: '#/components/schemas/PurchaseOrder'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -212,6 +238,41 @@ components:
       example: PO-2026-001
 
   schemas:
+    GoodsReceiptHistory:
+      type: object
+      required: [purchase_order_id, receipts]
+      properties:
+        purchase_order_id:
+          type: string
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoodsReceiptHistoryEntry'
+    GoodsReceiptHistoryEntry:
+      type: object
+      required: [receipt_no, received_date, receiver, items]
+      properties:
+        receipt_no:
+          type: string
+        received_date:
+          type: string
+          format: date
+        receiver:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            required: [item_id, item_name, qty_received]
+            properties:
+              item_id:
+                type: string
+              item_name:
+                type: string
+              qty_received:
+                type: integer
     CreatePurchaseOrderRequest:
       type: object
       required: [supplier, items]
@@ -382,6 +443,12 @@ components:
   responses:
     BadRequest:
       description: Request tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Input tidak lolos validasi
       content:
         application/json:
           schema:

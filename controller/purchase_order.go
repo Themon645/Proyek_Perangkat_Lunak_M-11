@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"m11/common/helper"
 	"m11/dto"
 	"m11/model"
+	"m11/resource"
 
 	"github.com/google/uuid"
 )
@@ -41,17 +43,36 @@ func (c *PurchaseOrderController) handle(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) == 3 && parts[0] == "purchase-orders" && r.Method == http.MethodPost {
-		if parts[2] == "receipts" {
+	if len(parts) == 3 && parts[0] == "purchase-orders" && parts[2] == "receipts" {
+		if r.Method == http.MethodGet {
+			c.receiptHistory(w, parts[1])
+			return
+		}
+		if r.Method == http.MethodPost {
 			c.receive(w, r, parts[1])
 			return
 		}
+	}
+	if len(parts) == 3 && parts[0] == "purchase-orders" && r.Method == http.MethodPost {
 		if parts[2] == "payment" {
 			c.pay(w, r, parts[1])
 			return
 		}
 	}
 	errorJSON(w, http.StatusNotFound, "route not found")
+}
+
+func (c *PurchaseOrderController) receiptHistory(w http.ResponseWriter, id string) {
+	po, receipts, err := c.service.ReceiptHistory(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			errorJSON(w, http.StatusNotFound, "purchase order not found")
+			return
+		}
+		errorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, resource.NewGoodsReceiptHistory(po, receipts))
 }
 
 func (c *PurchaseOrderController) create(w http.ResponseWriter, r *http.Request) {
@@ -110,12 +131,37 @@ func (c *PurchaseOrderController) receive(w http.ResponseWriter, r *http.Request
 }
 
 func (c *PurchaseOrderController) pay(w http.ResponseWriter, r *http.Request, id string) {
-	var req dto.PayPurchaseOrderRequest
-	if !decodeJSON(w, r, &req) || strings.TrimSpace(req.Proof) == "" {
-		return
+	var proofPath string
+	var uploaded bool
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if err := r.ParseMultipartForm(helper.MaxPaymentProofSize + (1 << 20)); err != nil {
+			validationErrorJSON(w, "INVALID_PAYMENT_PROOF", "format multipart/form-data tidak valid", map[string]string{"proof": "berkas bukti pembayaran wajib diisi"})
+			return
+		}
+		file, header, err := r.FormFile("proof")
+		if err != nil {
+			validationErrorJSON(w, "INVALID_PAYMENT_PROOF", "berkas bukti pembayaran wajib diisi", map[string]string{"proof": "berkas bukti pembayaran wajib diisi"})
+			return
+		}
+		proofPath, err = helper.SavePaymentProof(file, header)
+		_ = file.Close()
+		if err != nil {
+			validationErrorJSON(w, "INVALID_PAYMENT_PROOF", err.Error(), map[string]string{"proof": err.Error()})
+			return
+		}
+		uploaded = true
+	} else {
+		var req dto.PayPurchaseOrderRequest
+		if !decodeJSON(w, r, &req) || strings.TrimSpace(req.Proof) == "" {
+			return
+		}
+		proofPath = req.Proof
 	}
-	po, err := c.service.Pay(id, req.Proof)
+	po, err := c.service.Pay(id, proofPath)
 	if err != nil {
+		if uploaded {
+			_ = os.Remove(proofPath)
+		}
 		helper.LogTransaction("ERROR", "PAYMENT", "payment failed id=%s: %v", id, err)
 		c.repositoryError(w, err)
 		return
@@ -178,9 +224,45 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, value any) bool {
 func jsonResponse(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"data":    value,
+	})
 }
 
 func errorJSON(w http.ResponseWriter, status int, message string) {
-	jsonResponse(w, status, map[string]string{"error": message})
+	code := "BAD_REQUEST"
+	switch status {
+	case http.StatusNotFound:
+		code = "NOT_FOUND"
+	case http.StatusConflict:
+		code = "CONFLICT"
+	case http.StatusUnsupportedMediaType:
+		code = "UNSUPPORTED_MEDIA_TYPE"
+	case http.StatusUnprocessableEntity:
+		code = "VALIDATION_ERROR"
+	case http.StatusInternalServerError:
+		code = "INTERNAL_SERVER_ERROR"
+	}
+	writeErrorJSON(w, status, code, message, nil)
+}
+
+func validationErrorJSON(w http.ResponseWriter, code, message string, fields map[string]string) {
+	writeErrorJSON(w, http.StatusUnprocessableEntity, code, message, fields)
+}
+
+func writeErrorJSON(w http.ResponseWriter, status int, code, message string, fields map[string]string) {
+	err := map[string]any{
+		"code":    code,
+		"message": message,
+	}
+	if fields != nil {
+		err["fields"] = fields
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": false,
+		"error":   err,
+	})
 }

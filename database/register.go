@@ -23,6 +23,7 @@ func Register(dsn string, autoMigrate bool) (*gorm.DB, error) {
 		&model.PurchaseOrderItem{},
 		&model.GoodsReceipt{},
 		&model.GoodsReceiptItem{},
+		&model.PaymentRecord{},
 	); err != nil {
 		return nil, err
 	}
@@ -42,6 +43,13 @@ func Register(dsn string, autoMigrate bool) (*gorm.DB, error) {
 				ALTER TABLE goods_receipt_items
 					ADD CONSTRAINT fk_goods_receipt_items_item_uuid
 					FOREIGN KEY (item_uuid) REFERENCES purchase_order_items(uuid);
+			END IF;
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_records_purchase_order_uuid'
+			) THEN
+				ALTER TABLE payment_records
+					ADD CONSTRAINT fk_payment_records_purchase_order_uuid
+					FOREIGN KEY (purchase_order_uuid) REFERENCES purchase_orders(uuid);
 			END IF;
 		END $$;
 	`).Error; err != nil {

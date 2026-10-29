@@ -17,6 +17,7 @@ type PurchaseOrder struct {
 	Proof         string              `json:"proof,omitempty"`
 	Items         []PurchaseOrderItem `json:"items" gorm:"foreignKey:PurchaseOrderUUID;references:UUID;constraint:OnDelete:CASCADE"`
 	GoodsReceipts []GoodsReceipt      `json:"goods_receipts,omitempty" gorm:"foreignKey:PurchaseOrderUUID;references:UUID;-:migration"`
+	Payments      []PaymentRecord     `json:"payments,omitempty" gorm:"foreignKey:PurchaseOrderUUID;references:UUID;constraint:OnDelete:CASCADE"`
 	ReceivedAt    *time.Time          `json:"received_at,omitempty"`
 	helper.AuditFields
 }

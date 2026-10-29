@@ -30,6 +30,10 @@ func (s *PurchaseOrderService) Receive(id string, received map[string]int) (*mod
 	return s.repo.Receive(id, received)
 }
 
+func (s *PurchaseOrderService) ReceiptHistory(id string) (*model.PurchaseOrder, []model.GoodsReceipt, error) {
+	return s.repo.ReceiptHistory(id)
+}
+
 func (s *PurchaseOrderService) CreateGoodsReceipt(req *dto.CreateGoodsReceiptRequest, receivedDate time.Time) (*model.GoodsReceipt, error) {
 	receipt, err := s.repo.CreateGoodsReceipt(req, receivedDate)
 	if err == nil && s.grnPublisher != nil {

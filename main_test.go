@@ -65,10 +65,11 @@ func TestM11Flow(t *testing.T) {
 	}
 	res = request(http.MethodPost, "/goods-receipts", map[string]any{
 		"purchase_order_id": "PO-2", "receipt_no": "SJ-2", "received_date": "2026-10-27",
-		"items": []map[string]any{{"item_id": "item-2", "qty_received": 0}},
+		"items": []map[string]any{{"item_id": "item-2", "qty_received": 11}},
 	})
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("invalid GRN: got %d", res.Code)
+	if res.Code != http.StatusUnprocessableEntity ||
+		!bytes.Contains(res.Body.Bytes(), []byte("Jumlah diterima melebihi sisa pesanan barang (sisa: 10)")) {
+		t.Fatalf("invalid GRN quantity: got %d %s", res.Code, res.Body.String())
 	}
 	res = request(http.MethodPost, "/goods-receipts", map[string]any{
 		"purchase_order_id": "PO-2", "receipt_no": "SJ-2", "received_date": "2026-10-27",
@@ -80,5 +81,11 @@ func TestM11Flow(t *testing.T) {
 	var po model.PurchaseOrder
 	if err := database.First(&po, "id = ?", "PO-2").Error; err != nil || po.Status != common.StatusReceived {
 		t.Fatalf("GRN status: got %q, err %v", po.Status, err)
+	}
+	res = request(http.MethodGet, "/purchase-orders/PO-2/receipts", nil)
+	if res.Code != http.StatusOK ||
+		!bytes.Contains(res.Body.Bytes(), []byte(`"purchase_order_id":"PO-2"`)) ||
+		!bytes.Contains(res.Body.Bytes(), []byte(`"qty_received":10`)) {
+		t.Fatalf("receipt history: got %d %s", res.Code, res.Body.String())
 	}
 }
