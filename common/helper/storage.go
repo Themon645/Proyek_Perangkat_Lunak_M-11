@@ -21,9 +21,6 @@ var allowedProofTypes = map[string]string{
 }
 
 func SavePaymentProof(file multipart.File, header *multipart.FileHeader) (string, error) {
-	if header.Size > MaxPaymentProofSize {
-		return "", errors.New("ukuran bukti pembayaran maksimal 5 MB")
-	}
 	buffer := make([]byte, 512)
 	n, err := file.Read(buffer)
 	if err != nil && err != io.EOF {
@@ -33,6 +30,9 @@ func SavePaymentProof(file multipart.File, header *multipart.FileHeader) (string
 	extension, ok := allowedProofTypes[contentType]
 	if !ok {
 		return "", errors.New("format bukti pembayaran harus PDF, JPG, atau PNG")
+	}
+	if header.Size > MaxPaymentProofSize {
+		return "", errors.New("ukuran bukti pembayaran maksimal 5 MB")
 	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return "", err

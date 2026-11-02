@@ -215,8 +215,14 @@ func (r *PurchaseOrderRepository) Pay(id, proof string) (*model.PurchaseOrder, e
 		for _, item := range po.Items {
 			amount += int64(item.Received) * item.UnitCost
 		}
-		if err := tx.Model(&po).Updates(map[string]any{"payment": common.PaymentPaid, "proof": proof}).Error; err != nil {
-			return err
+		result := tx.Model(&po).
+			Where("payment = ?", common.PaymentUnpaid).
+			Updates(map[string]any{"payment": common.PaymentPaid, "proof": proof})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return errors.New("purchase order sudah dibayar")
 		}
 		if err := tx.Create(&model.PaymentRecord{
 			PurchaseOrderUUID: po.UUID,

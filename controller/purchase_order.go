@@ -202,7 +202,9 @@ func (c *PurchaseOrderController) repositoryError(w http.ResponseWriter, err err
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		errorJSON(w, http.StatusNotFound, "purchase order not found")
-	case strings.Contains(err.Error(), "must be approved"), strings.Contains(err.Error(), "must be received"):
+	case strings.Contains(err.Error(), "must be approved"),
+		strings.Contains(err.Error(), "must be received"),
+		strings.Contains(err.Error(), "sudah dibayar"):
 		errorJSON(w, http.StatusConflict, err.Error())
 	default:
 		errorJSON(w, http.StatusBadRequest, err.Error())
