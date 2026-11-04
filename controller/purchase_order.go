@@ -24,46 +24,38 @@ type PurchaseOrderController struct {
 	service *application.PurchaseOrderService
 }
 
-func NewPurchaseOrderController(service *application.PurchaseOrderService) http.Handler {
-	c := &PurchaseOrderController{service: service}
-	return http.HandlerFunc(c.handle)
+func NewPurchaseOrderController(service *application.PurchaseOrderService) *PurchaseOrderController {
+	return &PurchaseOrderController{service: service}
 }
 
-func (c *PurchaseOrderController) handle(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost && r.URL.Path == "/purchase-orders" {
-		c.create(w, r)
+func (c *PurchaseOrderController) List(w http.ResponseWriter, r *http.Request) {
+	orders, err := c.service.List()
+	if err != nil {
+		errorJSON(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if r.Method == http.MethodGet && r.URL.Path == "/purchase-orders/unpaid" {
-		c.unpaid(w)
-		return
+	result := make([]resource.PurchaseOrder, 0, len(orders))
+	for _, order := range orders {
+		result = append(result, resource.NewPurchaseOrder(order))
 	}
-	if r.Method == http.MethodGet && r.URL.Path == "/reports/procurement" {
-		c.report(w, r)
-		return
-	}
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) == 3 && parts[0] == "purchase-orders" && parts[2] == "receipts" {
-		if r.Method == http.MethodGet {
-			c.receiptHistory(w, parts[1])
-			return
-		}
-		if r.Method == http.MethodPost {
-			c.receive(w, r, parts[1])
-			return
-		}
-	}
-	if len(parts) == 3 && parts[0] == "purchase-orders" && r.Method == http.MethodPost {
-		if parts[2] == "payment" {
-			c.pay(w, r, parts[1])
-			return
-		}
-	}
-	errorJSON(w, http.StatusNotFound, "route not found")
+	jsonValue(w, http.StatusOK, result)
 }
 
-func (c *PurchaseOrderController) receiptHistory(w http.ResponseWriter, id string) {
-	po, receipts, err := c.service.ReceiptHistory(id)
+func (c *PurchaseOrderController) Find(w http.ResponseWriter, r *http.Request) {
+	order, err := c.service.Find(r.PathValue("id"))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		errorJSON(w, http.StatusNotFound, "purchase order not found")
+		return
+	}
+	if err != nil {
+		errorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonValue(w, http.StatusOK, resource.NewPurchaseOrder(*order))
+}
+
+func (c *PurchaseOrderController) ReceiptHistory(w http.ResponseWriter, r *http.Request) {
+	po, receipts, err := c.service.ReceiptHistory(r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			errorJSON(w, http.StatusNotFound, "purchase order not found")
@@ -75,7 +67,7 @@ func (c *PurchaseOrderController) receiptHistory(w http.ResponseWriter, id strin
 	jsonResponse(w, http.StatusOK, resource.NewGoodsReceiptHistory(po, receipts))
 }
 
-func (c *PurchaseOrderController) create(w http.ResponseWriter, r *http.Request) {
+func (c *PurchaseOrderController) Create(w http.ResponseWriter, r *http.Request) {
 	var req dto.CreatePurchaseOrderRequest
 	if !decodeJSON(w, r, &req) || req.Supplier == "" || len(req.Items) == 0 {
 		return
@@ -111,7 +103,8 @@ func (c *PurchaseOrderController) create(w http.ResponseWriter, r *http.Request)
 	jsonResponse(w, http.StatusCreated, po)
 }
 
-func (c *PurchaseOrderController) receive(w http.ResponseWriter, r *http.Request, id string) {
+func (c *PurchaseOrderController) Receive(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	var req dto.ReceivePurchaseOrderRequest
 	if !decodeJSON(w, r, &req) || len(req.Items) == 0 {
 		return
@@ -130,23 +123,24 @@ func (c *PurchaseOrderController) receive(w http.ResponseWriter, r *http.Request
 	jsonResponse(w, http.StatusOK, po)
 }
 
-func (c *PurchaseOrderController) pay(w http.ResponseWriter, r *http.Request, id string) {
+func (c *PurchaseOrderController) Pay(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	var proofPath string
 	var uploaded bool
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 		if err := r.ParseMultipartForm(helper.MaxPaymentProofSize + (1 << 20)); err != nil {
-			validationErrorJSON(w, "INVALID_PAYMENT_PROOF", "format multipart/form-data tidak valid", map[string]string{"proof": "berkas bukti pembayaran wajib diisi"})
+			paymentProofError(w, "format multipart/form-data tidak valid")
 			return
 		}
 		file, header, err := r.FormFile("proof")
 		if err != nil {
-			validationErrorJSON(w, "INVALID_PAYMENT_PROOF", "berkas bukti pembayaran wajib diisi", map[string]string{"proof": "berkas bukti pembayaran wajib diisi"})
+			paymentProofError(w, "berkas bukti pembayaran wajib diisi")
 			return
 		}
 		proofPath, err = helper.SavePaymentProof(file, header)
 		_ = file.Close()
 		if err != nil {
-			validationErrorJSON(w, "INVALID_PAYMENT_PROOF", err.Error(), map[string]string{"proof": err.Error()})
+			paymentProofError(w, err.Error())
 			return
 		}
 		uploaded = true
@@ -170,16 +164,20 @@ func (c *PurchaseOrderController) pay(w http.ResponseWriter, r *http.Request, id
 	jsonResponse(w, http.StatusOK, po)
 }
 
-func (c *PurchaseOrderController) unpaid(w http.ResponseWriter) {
+func paymentProofError(w http.ResponseWriter, message string) {
+	writeErrorJSON(w, http.StatusBadRequest, "INVALID_PAYMENT_PROOF", message, map[string]string{"proof": message})
+}
+
+func (c *PurchaseOrderController) Unpaid(w http.ResponseWriter, r *http.Request) {
 	rows, total, err := c.service.Unpaid()
 	if err != nil {
 		errorJSON(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonResponse(w, http.StatusOK, map[string]any{"purchase_orders": rows, "total": total})
+	jsonValue(w, http.StatusOK, map[string]any{"purchase_orders": rows, "total": total})
 }
 
-func (c *PurchaseOrderController) report(w http.ResponseWriter, r *http.Request) {
+func (c *PurchaseOrderController) Report(w http.ResponseWriter, r *http.Request) {
 	from, err := time.Parse("2006-01-02", r.URL.Query().Get("from"))
 	if err != nil {
 		errorJSON(w, http.StatusBadRequest, "from must use YYYY-MM-DD")
@@ -195,7 +193,7 @@ func (c *PurchaseOrderController) report(w http.ResponseWriter, r *http.Request)
 		errorJSON(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonResponse(w, http.StatusOK, map[string]any{"from": from.Format("2006-01-02"), "to": to.Format("2006-01-02"), "suppliers": totals})
+	jsonValue(w, http.StatusOK, map[string]any{"from": from.Format("2006-01-02"), "to": to.Format("2006-01-02"), "suppliers": totals})
 }
 
 func (c *PurchaseOrderController) repositoryError(w http.ResponseWriter, err error) {
@@ -230,6 +228,12 @@ func jsonResponse(w http.ResponseWriter, status int, value any) {
 		"success": true,
 		"data":    value,
 	})
+}
+
+func jsonValue(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func errorJSON(w http.ResponseWriter, status int, message string) {

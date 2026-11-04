@@ -16,16 +16,11 @@ type GoodsReceiptController struct {
 	service *application.PurchaseOrderService
 }
 
-func NewGoodsReceiptController(service *application.PurchaseOrderService) http.Handler {
-	c := &GoodsReceiptController{service: service}
-	return http.HandlerFunc(c.create)
+func NewGoodsReceiptController(service *application.PurchaseOrderService) *GoodsReceiptController {
+	return &GoodsReceiptController{service: service}
 }
 
-func (c *GoodsReceiptController) create(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		errorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
+func (c *GoodsReceiptController) Create(w http.ResponseWriter, r *http.Request) {
 	var req dto.CreateGoodsReceiptRequest
 	if !decodeJSON(w, r, &req) {
 		return

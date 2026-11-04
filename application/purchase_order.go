@@ -26,6 +26,14 @@ func (s *PurchaseOrderService) Create(po *model.PurchaseOrder) error {
 	return s.repo.Create(po)
 }
 
+func (s *PurchaseOrderService) List() ([]model.PurchaseOrder, error) {
+	return s.repo.List()
+}
+
+func (s *PurchaseOrderService) Find(id string) (*model.PurchaseOrder, error) {
+	return s.repo.Find(id)
+}
+
 func (s *PurchaseOrderService) Receive(id string, received map[string]int) (*model.PurchaseOrder, error) {
 	return s.repo.Receive(id, received)
 }

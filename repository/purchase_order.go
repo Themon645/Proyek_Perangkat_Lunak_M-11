@@ -34,6 +34,14 @@ func (r *PurchaseOrderRepository) Find(id string) (*model.PurchaseOrder, error) 
 	return &po, nil
 }
 
+func (r *PurchaseOrderRepository) List() ([]model.PurchaseOrder, error) {
+	var orders []model.PurchaseOrder
+	if err := r.db.Preload("Items").Order("created_at ASC").Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	return orders, nil
+}
+
 func (r *PurchaseOrderRepository) ReceiptHistory(id string) (*model.PurchaseOrder, []model.GoodsReceipt, error) {
 	var po model.PurchaseOrder
 	if err := r.db.First(&po, "id = ?", id).Error; err != nil {
