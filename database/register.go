@@ -22,6 +22,14 @@ var (
 // BuildPostgresDSN menyusun DSN PostgreSQL dari environment variables.
 func BuildPostgresDSN() string {
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		// Pastikan sslmode=require untuk koneksi cloud Neon jika belum diset di URL
+		if strings.Contains(dsn, "neon.tech") && !strings.Contains(dsn, "sslmode=") {
+			if strings.Contains(dsn, "?") {
+				dsn += "&sslmode=require"
+			} else {
+				dsn += "?sslmode=require"
+			}
+		}
 		return dsn
 	}
 	dbPort := os.Getenv("DB_PORT")
@@ -30,7 +38,11 @@ func BuildPostgresDSN() string {
 	}
 	sslMode := os.Getenv("DB_SSLMODE")
 	if sslMode == "" {
-		sslMode = "disable"
+		if strings.Contains(os.Getenv("DB_HOST"), "neon.tech") {
+			sslMode = "require"
+		} else {
+			sslMode = "disable"
+		}
 	}
 	return "host=" + os.Getenv("DB_HOST") +
 		" port=" + dbPort +
@@ -92,9 +104,7 @@ func Register(dsn string, autoMigrate bool) (*gorm.DB, error) {
 	if !autoMigrate {
 		return database, nil
 	}
-	if err := database.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto`).Error; err != nil {
-		return nil, err
-	}
+	_ = database.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto`)
 	if err := database.AutoMigrate(
 		&model.PurchaseOrder{},
 		&model.PurchaseOrderItem{},

@@ -28,14 +28,17 @@ func main() {
 
 	var repo *repository.PurchaseOrderRepository
 
-	// 1. Inisialisasi MongoDB jika MONGODB_URI dikonfigurasi
-	if os.Getenv("MONGODB_URI") != "" {
-		if mongoDB, err := database.GetMongoDatabase(); err != nil {
-			helper.LogError("MongoDB init error: %v", err)
+	// Inisialisasi PostgreSQL (Neon) jika DATABASE_URL atau DB_HOST diset
+	dbURL := os.Getenv("DATABASE_URL")
+	dbHost := os.Getenv("DB_HOST")
+	if dbURL != "" || dbHost != "" {
+		db, err := database.GetPostgresDB(true)
+		if err != nil {
+			helper.LogError("PostgreSQL (Neon) init error: %v", err)
 		} else {
-			_ = database.SeedMongo(mongoDB)
-			repo = repository.NewMongoPurchaseOrderRepository(mongoDB)
-			helper.LogInfo("MongoDB repository connected and active")
+			_ = database.SeedDummy(db)
+			repo = repository.NewPurchaseOrderRepository(db)
+			helper.LogInfo("PostgreSQL (Neon) repository connected and active")
 		}
 	}
 

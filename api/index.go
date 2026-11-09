@@ -22,39 +22,30 @@ var (
 	initOnce   sync.Once
 )
 
-// initApp menginisialisasi database singleton (MongoDB utama), repository, service, dan router.
+// initApp menginisialisasi database singleton (PostgreSQL Neon utama), repository, service, dan router.
 func initApp() {
 	_ = godotenv.Load()
 
 	var repo *repository.PurchaseOrderRepository
 
-	// 1. Inisialisasi MongoDB sebagai database utama jika MONGODB_URI dikonfigurasi
-	if os.Getenv("MONGODB_URI") != "" {
-		if mongoDB, err := database.GetMongoDatabase(); err != nil {
-			helper.LogError("MongoDB init error: %v", err)
-		} else {
-			// Otomatis seed data awal jika MongoDB masih kosong
-			if err := database.SeedMongo(mongoDB); err != nil {
-				helper.LogError("MongoDB seed error: %v", err)
-			}
-			repo = repository.NewMongoPurchaseOrderRepository(mongoDB)
-			helper.LogInfo("MongoDB repository active and connected")
+	// 1. Inisialisasi PostgreSQL (Neon / Cloud Postgres) sebagai database utama
+	dbURL := os.Getenv("DATABASE_URL")
+	dbHost := os.Getenv("DB_HOST")
+	if dbURL != "" || (dbHost != "" && dbHost != "localhost" && dbHost != "127.0.0.1") {
+		autoMigrate := true
+		if val := os.Getenv("DB_AUTO_MIGRATE"); val != "" {
+			autoMigrate, _ = strconv.ParseBool(val)
 		}
-	}
-
-	// 2. Fallback ke PostgreSQL hanya jika MongoDB tidak diset dan ada remote host
-	if repo == nil {
-		dbHost := os.Getenv("DB_HOST")
-		dbURL := os.Getenv("DATABASE_URL")
-		if dbURL != "" || (dbHost != "" && dbHost != "localhost" && dbHost != "127.0.0.1") {
-			autoMigrate, _ := strconv.ParseBool(os.Getenv("DB_AUTO_MIGRATE"))
-			db, err := database.GetPostgresDB(autoMigrate)
-			if err != nil {
-				helper.LogError("PostgreSQL init error: %v", err)
-			} else {
-				repo = repository.NewPurchaseOrderRepository(db)
-				helper.LogInfo("PostgreSQL repository active")
+		db, err := database.GetPostgresDB(autoMigrate)
+		if err != nil {
+			helper.LogError("PostgreSQL (Neon) init error: %v", err)
+		} else {
+			// Otomatis seed data awal jika tabel masih kosong
+			if err := database.SeedDummy(db); err != nil {
+				helper.LogError("PostgreSQL seed error: %v", err)
 			}
+			repo = repository.NewPurchaseOrderRepository(db)
+			helper.LogInfo("PostgreSQL (Neon) repository active and connected")
 		}
 	}
 

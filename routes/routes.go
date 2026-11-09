@@ -40,7 +40,7 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"message": "M11 Procurement API Serverless on Vercel is online",
-			"database": "MongoDB Atlas",
+			"database": "PostgreSQL (Neon)",
 			"endpoints": []string{
 				"/health",
 				"/purchase-orders",
@@ -61,14 +61,19 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 			"serverless": "running",
 		}
 
-		if os.Getenv("MONGODB_URI") != "" {
-			if _, err := database.GetMongoClient(); err != nil {
-				dbStatus["mongodb"] = "error: " + err.Error()
+		if os.Getenv("DATABASE_URL") != "" || os.Getenv("DB_HOST") != "" {
+			if db, err := database.GetPostgresDB(false); err != nil {
+				dbStatus["postgres"] = "error: " + err.Error()
 			} else {
-				dbStatus["mongodb"] = "connected"
+				sqlDB, err := db.DB()
+				if err != nil || sqlDB.Ping() != nil {
+					dbStatus["postgres"] = "ping_failed"
+				} else {
+					dbStatus["postgres"] = "connected (Neon)"
+				}
 			}
 		} else {
-			dbStatus["mongodb"] = "not_configured (MONGODB_URI is empty)"
+			dbStatus["postgres"] = "not_configured (DATABASE_URL is empty)"
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -78,16 +83,23 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 		})
 	})
 
-	// Endpoint untuk membersihkan dan me-reset data MongoDB
+	// Endpoint untuk membersihkan dan me-reset data database
 	mux.HandleFunc("POST /database/reset-and-seed", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		mongoDB, err := database.GetMongoDatabase()
+
+		if os.Getenv("DATABASE_URL") == "" && os.Getenv("DB_HOST") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "DATABASE_URL is not configured"})
+			return
+		}
+
+		db, err := database.GetPostgresDB(true)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
 			return
 		}
-		if err := database.ResetAndSeedMongo(mongoDB); err != nil {
+		if err := database.ResetAndSeedPostgres(db); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
 			return
@@ -95,7 +107,7 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
-			"message": "MongoDB berhasil dibersihkan dan diisi 10 purchase orders & goods receipts bersih",
+			"message": "PostgreSQL (Neon) berhasil dibersihkan dan diisi 10 purchase orders & goods receipts bersih",
 		})
 	})
 

@@ -86,3 +86,34 @@ func SeedDummy(db *gorm.DB) error {
 		return nil
 	})
 }
+
+// CleanPostgres mengosongkan seluruh tabel data pengadaan pada PostgreSQL / Neon.
+func CleanPostgres(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM goods_receipt_items").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM goods_receipts").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM payment_records").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM purchase_order_items").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM purchase_orders").Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// ResetAndSeedPostgres membersihkan data lama dan mengisi 10 dummy PO & Goods Receipt bersih.
+func ResetAndSeedPostgres(db *gorm.DB) error {
+	if err := CleanPostgres(db); err != nil {
+		return err
+	}
+	return SeedDummy(db)
+}
+

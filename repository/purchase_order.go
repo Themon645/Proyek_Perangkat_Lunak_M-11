@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/mongo"
 	"gorm.io/gorm"
 	"m11/common"
 	"m11/common/validation"
@@ -16,8 +15,7 @@ import (
 var ErrNotFound = gorm.ErrRecordNotFound
 
 type PurchaseOrderRepository struct {
-	db      *gorm.DB
-	mongoDB *mongo.Database
+	db *gorm.DB
 }
 
 func NewPurchaseOrderRepository(db *gorm.DB) *PurchaseOrderRepository {
@@ -25,16 +23,10 @@ func NewPurchaseOrderRepository(db *gorm.DB) *PurchaseOrderRepository {
 }
 
 func (r *PurchaseOrderRepository) Create(po *model.PurchaseOrder) error {
-	if r.mongoDB != nil {
-		return r.createMongo(po)
-	}
 	return r.db.Create(po).Error
 }
 
 func (r *PurchaseOrderRepository) Find(id string) (*model.PurchaseOrder, error) {
-	if r.mongoDB != nil {
-		return r.findMongo(id)
-	}
 	var po model.PurchaseOrder
 	if err := r.db.Preload("Items").First(&po, "id = ?", id).Error; err != nil {
 		return nil, err
@@ -43,9 +35,6 @@ func (r *PurchaseOrderRepository) Find(id string) (*model.PurchaseOrder, error) 
 }
 
 func (r *PurchaseOrderRepository) List() ([]model.PurchaseOrder, error) {
-	if r.mongoDB != nil {
-		return r.listMongo()
-	}
 	var orders []model.PurchaseOrder
 	if err := r.db.Preload("Items").Order("created_at ASC").Find(&orders).Error; err != nil {
 		return nil, err
@@ -54,9 +43,6 @@ func (r *PurchaseOrderRepository) List() ([]model.PurchaseOrder, error) {
 }
 
 func (r *PurchaseOrderRepository) ReceiptHistory(id string) (*model.PurchaseOrder, []model.GoodsReceipt, error) {
-	if r.mongoDB != nil {
-		return r.receiptHistoryMongo(id)
-	}
 	var po model.PurchaseOrder
 	if err := r.db.First(&po, "id = ?", id).Error; err != nil {
 		return nil, nil, err
@@ -72,9 +58,6 @@ func (r *PurchaseOrderRepository) ReceiptHistory(id string) (*model.PurchaseOrde
 }
 
 func (r *PurchaseOrderRepository) Receive(id string, received map[string]int) (*model.PurchaseOrder, error) {
-	if r.mongoDB != nil {
-		return r.receiveMongo(id, received)
-	}
 	var po model.PurchaseOrder
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Preload("Items").First(&po, "id = ?", id).Error; err != nil {
@@ -125,9 +108,6 @@ func (r *PurchaseOrderRepository) Receive(id string, received map[string]int) (*
 }
 
 func (r *PurchaseOrderRepository) CreateGoodsReceipt(req *dto.CreateGoodsReceiptRequest, receivedDate time.Time) (*model.GoodsReceipt, error) {
-	if r.mongoDB != nil {
-		return r.createGoodsReceiptMongo(req, receivedDate)
-	}
 	var receipt model.GoodsReceipt
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var po model.PurchaseOrder
@@ -231,9 +211,6 @@ func receiptTotals(tx *gorm.DB, items []model.PurchaseOrderItem) (map[uuid.UUID]
 }
 
 func (r *PurchaseOrderRepository) Pay(id, proof string) (*model.PurchaseOrder, error) {
-	if r.mongoDB != nil {
-		return r.payMongo(id, proof)
-	}
 	var po model.PurchaseOrder
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Preload("Items").First(&po, "id = ?", id).Error; err != nil {
@@ -279,9 +256,6 @@ type UnpaidRow struct {
 }
 
 func (r *PurchaseOrderRepository) Unpaid() ([]UnpaidRow, int64, error) {
-	if r.mongoDB != nil {
-		return r.unpaidMongo()
-	}
 	var orders []model.PurchaseOrder
 	if err := r.db.Preload("Items").
 		Where("payment = ? AND status IN ?", common.PaymentUnpaid, []string{common.StatusReceived, common.StatusReceivedPartial}).
@@ -302,9 +276,6 @@ func (r *PurchaseOrderRepository) Unpaid() ([]UnpaidRow, int64, error) {
 }
 
 func (r *PurchaseOrderRepository) Report(from, to time.Time) (map[string]int64, error) {
-	if r.mongoDB != nil {
-		return r.reportMongo(from, to)
-	}
 	var orders []model.PurchaseOrder
 	if err := r.db.Preload("Items").
 		Where("received_at >= ? AND received_at < ?", from, to.Add(24*time.Hour)).

@@ -1,22 +1,123 @@
 openapi: 3.0.3
 info:
   title: M11 Procurement API
-  description: API Purchase Order, Goods Receipt, dan pembayaran supplier.
-  version: 1.0.0
+  description: API Purchase Order, Goods Receipt, dan pelunasan tagihan supplier (Araya Hub BPU Universitas Pasundan) terintegrasi Vercel Serverless Function & PostgreSQL (Neon Cloud).
+  version: 1.2.0
 
 servers:
+  - url: https://proyek-perangkat-lunak-m-11.vercel.app
+    description: Production Serverless (Vercel Cloud)
   - url: http://localhost:8080
+    description: Local Standalone Server
 
 tags:
   - name: Purchase Orders
+    description: Manajemen pengadaan barang dan siklus status PO
   - name: Goods Receipts
+    description: Pencatatan penerimaan barang fisik (GRN) dan surat jalan
   - name: Reports
+    description: Agregasi data belanja dan pelaporan pengadaan
+  - name: Storage
+    description: Layanan berkas statis dan bukti pembayaran
+  - name: System
+    description: Monitoring kesehatan serverless dan utilitas database
 
 paths:
+  /:
+    get:
+      tags: [System]
+      summary: Root health & welcome info
+      description: Mengembalikan pesan sambutan dan daftar endpoint yang tersedia di runtime Vercel.
+      responses:
+        '200':
+          description: Serverless function aktif
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: M11 Procurement API Serverless on Vercel is online
+                  database:
+                    type: string
+                    example: PostgreSQL (Neon)
+                  endpoints:
+                    type: array
+                    items:
+                      type: string
+
+  /health:
+    get:
+      tags: [System]
+      summary: Health check serverless & database
+      description: Memeriksa kesiapan runtime serverless dan status koneksi database (PostgreSQL Neon).
+      responses:
+        '200':
+          description: Status kesehatan sistem
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      serverless:
+                        type: string
+                        example: running
+                      postgres:
+                        type: string
+                        example: connected (Neon)
+
+  /database/reset-and-seed:
+    post:
+      tags: [System]
+      summary: Reset & seed MongoDB Atlas
+      description: Menghapus data lama dan menginisialisasi 10 Purchase Order serta 10 Goods Receipt bersih dengan alur pengadaan yang realistis.
+      responses:
+        '200':
+          description: Database berhasil direset dan di-seed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: MongoDB berhasil dibersihkan dan diisi 10 purchase orders & goods receipts bersih
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /purchase-orders:
+    get:
+      tags: [Purchase Orders]
+      summary: Mendapatkan seluruh daftar purchase order
+      description: Mengembalikan daftar seluruh PO terurut dari yang terbaru, termasuk rincian item, kuantitas diterima, dan total biaya.
+      responses:
+        '200':
+          description: Daftar purchase order berhasil diambil
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PurchaseOrder'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
     post:
       tags: [Purchase Orders]
-      summary: Membuat purchase order
+      summary: Membuat purchase order baru
       requestBody:
         required: true
         content:
@@ -25,13 +126,13 @@ paths:
               $ref: '#/components/schemas/CreatePurchaseOrderRequest'
             example:
               id: PO-2026-001
-              supplier: PT Contoh Supplier
+              supplier: PT Graha Sarana Mitra
               status: approved
               items:
-                - id: ITEM-001
-                  name: Kertas HVS A4
+                - id: ITEM-101
+                  name: Kertas HVS A4 80gr Sinar Dunia
                   quantity: 100
-                  unit_cost: 50000
+                  unit_cost: 65000
       responses:
         '201':
           description: Purchase order berhasil dibuat
@@ -44,25 +145,46 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
-  /purchase-orders/{id}/receipts:
+  /purchase-orders/{id}:
     get:
-      tags: [Goods Receipts]
-      summary: Mendapatkan riwayat penerimaan purchase order
-      description: Mengembalikan seluruh tahapan penerimaan per tanggal dengan penerima dan rincian item.
+      tags: [Purchase Orders]
+      summary: Mendapatkan detail purchase order berdasarkan ID
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
       responses:
         '200':
-          description: Riwayat penerimaan
+          description: Detail purchase order ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /purchase-orders/{id}/receipts:
+    get:
+      tags: [Goods Receipts]
+      summary: Mendapatkan riwayat penerimaan purchase order (Multi-Receipt)
+      description: Mengembalikan seluruh tahap penerimaan (surat jalan) per tanggal dengan rincian penerima, catatan, dan item yang diterima.
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      responses:
+        '200':
+          description: Riwayat penerimaan berhasil diambil
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/GoodsReceiptHistory'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
     post:
       tags: [Purchase Orders]
-      summary: Mencatat penerimaan barang langsung ke purchase order
+      summary: Mencatat penerimaan barang langsung ke purchase order (Legacy)
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
       requestBody:
@@ -73,11 +195,11 @@ paths:
               $ref: '#/components/schemas/ReceivePurchaseOrderRequest'
             example:
               items:
-                - id: ITEM-001
+                - id: ITEM-101
                   quantity: 50
       responses:
         '200':
-          description: Penerimaan berhasil dicatat
+          description: Penerimaan barang berhasil dicatat
           content:
             application/json:
               schema:
@@ -92,7 +214,8 @@ paths:
   /purchase-orders/{id}/payment:
     post:
       tags: [Purchase Orders]
-      summary: Mencatat pembayaran purchase order
+      summary: Mencatat pelunasan tagihan purchase order
+      description: Mengunggah berkas bukti transfer fisik (PDF/JPG/PNG maks 5 MB) atau referensi bukti, kemudian memperbarui status pembayaran PO menjadi `paid`.
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
       requestBody:
@@ -106,23 +229,21 @@ paths:
                 proof:
                   type: string
                   format: binary
-                  description: Bukti pembayaran PDF, JPG, atau PNG; maksimal 5 MB.
+                  description: Berkas bukti transfer (PDF, JPG, atau PNG); maksimal 5 MB.
           application/json:
             schema:
               $ref: '#/components/schemas/PayPurchaseOrderRequest'
             example:
-              proof: transfer-2026-001
+              proof: storage/payment-proofs/bukti-transfer-mandiri.pdf
       responses:
         '200':
-          description: Pembayaran berhasil dicatat
+          description: Pembayaran berhasil diverifikasi dan dicatat
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PurchaseOrder'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '422':
-          $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -131,10 +252,10 @@ paths:
   /purchase-orders/unpaid:
     get:
       tags: [Purchase Orders]
-      summary: Mendapatkan purchase order yang belum lunas
+      summary: Mendapatkan daftar purchase order yang belum lunas
       responses:
         '200':
-          description: Daftar tagihan belum lunas
+          description: Daftar tagihan belum lunas dan total nilai akumulasi
           content:
             application/json:
               schema:
@@ -148,12 +269,13 @@ paths:
                   total:
                     type: integer
                     format: int64
+                    example: 6500000
 
   /goods-receipts:
     post:
       tags: [Goods Receipts]
-      summary: Membuat goods receipt (GRN)
-      description: Menyimpan GRN dan memperbarui status serta jumlah diterima pada purchase order dalam satu transaksi.
+      summary: Membuat goods receipt baru (GRN)
+      description: Menyimpan dokumen penerimaan surat jalan, memvalidasi kuantitas terhadap sisa pesanan, dan memperbarui status PO secara atomik (`received partial` atau `received`).
       requestBody:
         required: true
         content:
@@ -162,12 +284,12 @@ paths:
               $ref: '#/components/schemas/CreateGoodsReceiptRequest'
             example:
               purchase_order_id: PO-2026-001
-              receipt_no: SJ-2026-001
-              received_date: '2026-10-27'
+              receipt_no: SJ-2026/X/9812
+              received_date: '2026-11-09'
               receiver: Petugas Gudang
               notes: Barang diterima dalam kondisi baik
               items:
-                - item_id: ITEM-001
+                - item_id: ITEM-101
                   qty_received: 50
       responses:
         '201':
@@ -186,7 +308,7 @@ paths:
   /reports/procurement:
     get:
       tags: [Reports]
-      summary: Mendapatkan laporan procurement
+      summary: Mendapatkan rekap laporan pengadaan
       parameters:
         - name: from
           in: query
@@ -201,10 +323,10 @@ paths:
           schema:
             type: string
             format: date
-          example: '2026-10-31'
+          example: '2026-11-30'
       responses:
         '200':
-          description: Laporan procurement
+          description: Laporan pengadaan per vendor
           content:
             application/json:
               schema:
@@ -227,6 +349,36 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /storage/payment-proofs/{filename}:
+    get:
+      tags: [Storage]
+      summary: Mengunduh atau melihat berkas bukti transfer
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          example: 9e32fba176c12814d45.pdf
+      responses:
+        '200':
+          description: Berkas bukti transfer
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
   parameters:
     PurchaseOrderId:
@@ -238,52 +390,68 @@ components:
       example: PO-2026-001
 
   schemas:
-    GoodsReceiptHistory:
+    PurchaseOrder:
       type: object
-      required: [purchase_order_id, receipts]
       properties:
-        purchase_order_id:
+        id:
           type: string
-        receipts:
-          type: array
-          items:
-            $ref: '#/components/schemas/GoodsReceiptHistoryEntry'
-    GoodsReceiptHistoryEntry:
-      type: object
-      required: [receipt_no, received_date, receiver, items]
-      properties:
-        receipt_no:
+          example: PO-2026-001
+        supplier:
           type: string
-        received_date:
+          example: PT Graha Sarana Mitra
+        status:
           type: string
-          format: date
-        receiver:
+          example: received partial
+          enum: [submitted, approved, received partial, received, rejected]
+        payment:
           type: string
-        notes:
+          example: unpaid
+          enum: [unpaid, paid]
+        proof:
           type: string
+          example: storage/payment-proofs/e84cb2176a91.pdf
+        total:
+          type: integer
+          format: int64
+          example: 6500000
         items:
           type: array
           items:
-            type: object
-            required: [item_id, item_name, qty_received]
-            properties:
-              item_id:
-                type: string
-              item_name:
-                type: string
-              qty_received:
-                type: integer
+            $ref: '#/components/schemas/PurchaseOrderItem'
+
+    PurchaseOrderItem:
+      type: object
+      properties:
+        id:
+          type: string
+          example: ITEM-101
+        name:
+          type: string
+          example: Kertas HVS A4 80gr Sinar Dunia
+        quantity:
+          type: integer
+          example: 100
+        unit_cost:
+          type: integer
+          format: int64
+          example: 65000
+        qty_received:
+          type: integer
+          example: 50
+
     CreatePurchaseOrderRequest:
       type: object
       required: [supplier, items]
       properties:
         id:
           type: string
+          example: PO-2026-001
         supplier:
           type: string
+          example: PT Graha Sarana Mitra
         status:
           type: string
-          example: pending
+          example: approved
         items:
           type: array
           minItems: 1
@@ -296,48 +464,19 @@ components:
       properties:
         id:
           type: string
+          example: ITEM-101
         name:
           type: string
+          example: Kertas HVS A4 80gr Sinar Dunia
         quantity:
           type: integer
           minimum: 1
+          example: 100
         unit_cost:
           type: integer
           format: int64
           minimum: 0
-
-    PurchaseOrder:
-      type: object
-      properties:
-        id:
-          type: string
-        supplier:
-          type: string
-        status:
-          type: string
-        payment:
-          type: string
-        proof:
-          type: string
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/PurchaseOrderItem'
-
-    PurchaseOrderItem:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        quantity:
-          type: integer
-        unit_cost:
-          type: integer
-          format: int64
-        received:
-          type: integer
+          example: 65000
 
     ReceivePurchaseOrderRequest:
       type: object
@@ -352,9 +491,11 @@ components:
             properties:
               id:
                 type: string
+                example: ITEM-101
               quantity:
                 type: integer
                 minimum: 1
+                example: 50
 
     PayPurchaseOrderRequest:
       type: object
@@ -363,6 +504,7 @@ components:
         proof:
           type: string
           minLength: 1
+          example: storage/payment-proofs/bukti-transfer-2026.pdf
 
     CreateGoodsReceiptRequest:
       type: object
@@ -370,15 +512,20 @@ components:
       properties:
         purchase_order_id:
           type: string
+          example: PO-2026-001
         receipt_no:
           type: string
+          example: SJ-2026/X/9812
         received_date:
           type: string
           format: date
+          example: '2026-11-09'
         receiver:
           type: string
+          example: Petugas Gudang
         notes:
           type: string
+          example: Barang diterima dalam kondisi baik
         items:
           type: array
           minItems: 1
@@ -388,24 +535,30 @@ components:
             properties:
               item_id:
                 type: string
+                example: ITEM-101
               qty_received:
                 type: integer
                 minimum: 1
+                example: 50
 
     GoodsReceipt:
       type: object
       properties:
         receipt_no:
           type: string
+          example: SJ-2026/X/9812
         purchase_order_id:
           type: string
+          example: PO-2026-001
         received_date:
           type: string
           format: date-time
         receiver:
           type: string
+          example: Petugas Gudang
         notes:
           type: string
+          example: Barang diterima dalam kondisi baik
         items:
           type: array
           items:
@@ -415,30 +568,83 @@ components:
       type: object
       properties:
         id:
-          type: integer
+          type: string
+          example: GRN-ITEM-001
         receipt_no:
           type: string
+          example: SJ-2026/X/9812
         item_id:
           type: string
+          example: ITEM-101
         qty_received:
           type: integer
+          example: 50
+
+    GoodsReceiptHistory:
+      type: object
+      required: [purchase_order_id, receipts]
+      properties:
+        purchase_order_id:
+          type: string
+          example: PO-2026-001
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoodsReceiptHistoryEntry'
+
+    GoodsReceiptHistoryEntry:
+      type: object
+      required: [receipt_no, received_date, receiver, items]
+      properties:
+        receipt_no:
+          type: string
+          example: SJ-2026/X/9812
+        received_date:
+          type: string
+          format: date
+          example: '2026-11-09'
+        receiver:
+          type: string
+          example: Petugas Gudang
+        notes:
+          type: string
+          example: Barang diterima dalam kondisi baik
+        items:
+          type: array
+          items:
+            type: object
+            required: [item_id, item_name, qty_received]
+            properties:
+              item_id:
+                type: string
+                example: ITEM-101
+              item_name:
+                type: string
+                example: Kertas HVS A4 80gr Sinar Dunia
+              qty_received:
+                type: integer
+                example: 50
 
     UnpaidPurchaseOrder:
       type: object
       properties:
         id:
           type: string
+          example: PO-2026-001
         supplier:
           type: string
+          example: PT Graha Sarana Mitra
         total:
           type: integer
           format: int64
+          example: 6500000
 
     Error:
       type: object
       properties:
         error:
           type: string
+          example: Invalid input
 
   responses:
     BadRequest:
@@ -466,7 +672,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     ServerError:
-      description: Kesalahan server
+      description: Kesalahan internal server
       content:
         application/json:
           schema:
