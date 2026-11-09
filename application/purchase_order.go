@@ -30,6 +30,14 @@ func (s *PurchaseOrderService) List() ([]model.PurchaseOrder, error) {
 	return s.repo.List()
 }
 
+func (s *PurchaseOrderService) Approved() ([]model.PurchaseOrder, error) {
+	return s.repo.Approved()
+}
+
+func (s *PurchaseOrderService) ListByStatus(status string) ([]model.PurchaseOrder, error) {
+	return s.repo.ListByStatus(status)
+}
+
 func (s *PurchaseOrderService) Find(id string) (*model.PurchaseOrder, error) {
 	return s.repo.Find(id)
 }

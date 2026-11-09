@@ -15,6 +15,7 @@ func RegisterPurchaseOrderRoutes(route *http.ServeMux, service *application.Purc
 	receiptHandler := controller.NewGoodsReceiptController(service)
 	route.HandleFunc("GET /purchase-orders", handler.List)
 	route.HandleFunc("POST /purchase-orders", handler.Create)
+	route.HandleFunc("GET /purchase-orders/approved", handler.Approved)
 	route.HandleFunc("GET /purchase-orders/unpaid", handler.Unpaid)
 	route.HandleFunc("GET /purchase-orders/{id}", handler.Find)
 	route.HandleFunc("GET /purchase-orders/{id}/receipts", handler.ReceiptHistory)

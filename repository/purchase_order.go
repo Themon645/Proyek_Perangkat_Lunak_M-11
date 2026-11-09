@@ -42,6 +42,22 @@ func (r *PurchaseOrderRepository) List() ([]model.PurchaseOrder, error) {
 	return orders, nil
 }
 
+func (r *PurchaseOrderRepository) Approved() ([]model.PurchaseOrder, error) {
+	var orders []model.PurchaseOrder
+	if err := r.db.Preload("Items").Where("status = ?", common.StatusApproved).Order("created_at ASC").Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	return orders, nil
+}
+
+func (r *PurchaseOrderRepository) ListByStatus(status string) ([]model.PurchaseOrder, error) {
+	var orders []model.PurchaseOrder
+	if err := r.db.Preload("Items").Where("status = ?", status).Order("created_at ASC").Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	return orders, nil
+}
+
 func (r *PurchaseOrderRepository) ReceiptHistory(id string) (*model.PurchaseOrder, []model.GoodsReceipt, error) {
 	var po model.PurchaseOrder
 	if err := r.db.First(&po, "id = ?", id).Error; err != nil {

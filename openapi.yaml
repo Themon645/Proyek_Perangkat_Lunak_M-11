@@ -249,6 +249,23 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /purchase-orders/approved:
+    get:
+      tags: [Purchase Orders]
+      summary: Mendapatkan daftar purchase order yang berstatus disetujui (approved)
+      description: Mengembalikan seluruh PO dengan status `approved` yang siap untuk diproses penerimaan barangnya (GRN).
+      responses:
+        '200':
+          description: Daftar purchase order yang telah disetujui
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PurchaseOrder'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /purchase-orders/unpaid:
     get:
       tags: [Purchase Orders]

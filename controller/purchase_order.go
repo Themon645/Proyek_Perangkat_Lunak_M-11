@@ -28,7 +28,27 @@ func NewPurchaseOrderController(service *application.PurchaseOrderService) *Purc
 }
 
 func (c *PurchaseOrderController) List(w http.ResponseWriter, r *http.Request) {
-	orders, err := c.service.List()
+	status := r.URL.Query().Get("status")
+	var orders []model.PurchaseOrder
+	var err error
+	if status != "" {
+		orders, err = c.service.ListByStatus(status)
+	} else {
+		orders, err = c.service.List()
+	}
+	if err != nil {
+		errorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	result := make([]resource.PurchaseOrder, 0, len(orders))
+	for _, order := range orders {
+		result = append(result, resource.NewPurchaseOrder(order))
+	}
+	jsonValue(w, http.StatusOK, result)
+}
+
+func (c *PurchaseOrderController) Approved(w http.ResponseWriter, r *http.Request) {
+	orders, err := c.service.Approved()
 	if err != nil {
 		errorJSON(w, http.StatusInternalServerError, err.Error())
 		return

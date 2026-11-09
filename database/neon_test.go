@@ -4,13 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joho/godotenv"
+	"m11/common"
 	"m11/database"
 	"m11/model"
-
-	"github.com/joho/godotenv"
 )
 
-func TestNeonLiveConnection(t *testing.T) {
+func TestNeonResetAndSeed(t *testing.T) {
 	_ = godotenv.Load("../.env")
 
 	db, err := database.GetPostgresDB(true)
@@ -19,33 +19,24 @@ func TestNeonLiveConnection(t *testing.T) {
 		return
 	}
 
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("Gagal mendapatkan sql.DB: %v", err)
+	// 1. Reset and re-seed with realistic statuses
+	if err := database.ResetAndSeedPostgres(db); err != nil {
+		t.Fatalf("Gagal reset and seed Neon: %v", err)
 	}
 
-	if err := sqlDB.Ping(); err != nil {
-		t.Fatalf("Ping ke Neon PostgreSQL gagal: %v", err)
+	// 2. Count Approved POs
+	var approvedCount int64
+	if err := db.Model(&model.PurchaseOrder{}).Where("status = ?", common.StatusApproved).Count(&approvedCount).Error; err != nil {
+		t.Fatalf("Gagal menghitung approved PO: %v", err)
 	}
+	t.Logf("Total PO berstatus 'approved' di Neon: %d", approvedCount)
 
-	t.Log("Koneksi ke Neon PostgreSQL BERHASIL!")
-
-	// Jalankan SeedDummy jika tabel masih kosong
-	if err := database.SeedDummy(db); err != nil {
-		t.Fatalf("Seeding data dummy gagal: %v", err)
+	// 3. Count Total POs
+	var totalCount int64
+	if err := db.Model(&model.PurchaseOrder{}).Count(&totalCount).Error; err != nil {
+		t.Fatalf("Gagal menghitung total PO: %v", err)
 	}
-
-	var poCount int64
-	if err := db.Model(&model.PurchaseOrder{}).Count(&poCount).Error; err != nil {
-		t.Fatalf("Gagal menghitung purchase orders: %v", err)
-	}
-	t.Logf("Total Purchase Orders di Neon: %d", poCount)
-
-	var receiptCount int64
-	if err := db.Model(&model.GoodsReceipt{}).Count(&receiptCount).Error; err != nil {
-		t.Fatalf("Gagal menghitung goods receipts: %v", err)
-	}
-	t.Logf("Total Goods Receipts di Neon: %d", receiptCount)
+	t.Logf("Total seluruh PO di Neon: %d", totalCount)
 
 	time.Sleep(100 * time.Millisecond)
 }

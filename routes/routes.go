@@ -44,6 +44,7 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 			"endpoints": []string{
 				"/health",
 				"/purchase-orders",
+				"/purchase-orders/approved",
 				"/purchase-orders/unpaid",
 				"/reports/procurement",
 				"/goods-receipts",
