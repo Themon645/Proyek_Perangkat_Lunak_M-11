@@ -1,14 +1,32 @@
 package database
 
 import (
+	"os"
+	"strings"
+
 	"m11/model"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func Register(dsn string, autoMigrate bool) (*gorm.DB, error) {
-	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	logLevel := logger.Warn
+	switch strings.ToLower(os.Getenv("DB_LOG_LEVEL")) {
+	case "silent":
+		logLevel = logger.Silent
+	case "error":
+		logLevel = logger.Error
+	case "info":
+		logLevel = logger.Info
+	case "warn":
+		logLevel = logger.Warn
+	}
+
+	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logLevel),
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -75,5 +75,6 @@ func main() {
 	helper.LogInfo("database connected: %s", os.Getenv("DB_NAME"))
 	helper.LogInfo("backend running at http://%s:%s", displayHost, port)
 	helper.LogInfo("auto migration: %t", autoMigrate)
+	helper.LogWarn("application started without ssl/tls enabled")
 	log.Fatal(http.ListenAndServe(address, api.Register(service)))
 }
