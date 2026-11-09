@@ -92,3 +92,4 @@ func TestSavePaymentProof_InvalidType(t *testing.T) {
 		t.Fatal("expected error for invalid content type, got nil")
 	}
 }
+
