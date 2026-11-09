@@ -38,3 +38,4 @@ func main() {
 	helper.LogInfo("Server running on port :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
+
