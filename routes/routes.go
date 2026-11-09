@@ -27,7 +27,12 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 	mux := http.NewServeMux()
 	RegisterPurchaseOrderRoutes(mux, service)
 
-	// Root endpoint: mencegah error 404/500 saat preview Vercel membuka root /
+	// Favicon handler agar browser tidak memicu error 404/500 saat meminta favicon
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	// Root endpoint: mencegah error saat preview Vercel membuka root /
 	rootHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
