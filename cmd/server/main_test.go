@@ -8,12 +8,12 @@ import (
 	"os"
 	"testing"
 
-	"m11/api"
 	"m11/application"
 	"m11/common"
 	"m11/database"
 	"m11/model"
 	"m11/repository"
+	"m11/routes"
 )
 
 func TestM11Flow(t *testing.T) {
@@ -26,7 +26,7 @@ func TestM11Flow(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := application.NewPurchaseOrderService(repository.NewPurchaseOrderRepository(database))
-	handler := api.Register(service)
+	handler := routes.Register(service)
 	request := func(method, path string, body any) *httptest.ResponseRecorder {
 		data, _ := json.Marshal(body)
 		req := httptest.NewRequest(method, path, bytes.NewReader(data))
@@ -89,3 +89,4 @@ func TestM11Flow(t *testing.T) {
 		t.Fatalf("receipt history: got %d %s", res.Code, res.Body.String())
 	}
 }
+

@@ -3,6 +3,8 @@ package database
 import (
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"m11/model"
 
@@ -10,6 +12,63 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+var (
+	postgresInstance *gorm.DB
+	postgresOnce     sync.Once
+	postgresErr      error
+)
+
+// BuildPostgresDSN menyusun DSN PostgreSQL dari environment variables.
+func BuildPostgresDSN() string {
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		return dsn
+	}
+	dbPort := os.Getenv("DB_PORT")
+	if dbPort == "" {
+		dbPort = "5432"
+	}
+	sslMode := os.Getenv("DB_SSLMODE")
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+	return "host=" + os.Getenv("DB_HOST") +
+		" port=" + dbPort +
+		" user=" + os.Getenv("DB_USER") +
+		" password=" + os.Getenv("DB_PASSWORD") +
+		" dbname=" + os.Getenv("DB_NAME") +
+		" sslmode=" + sslMode
+}
+
+// GetPostgresDB mengembalikan instance singleton GORM DB dengan connection pool
+// yang dioptimalkan untuk arsitektur serverless.
+func GetPostgresDB(autoMigrate bool) (*gorm.DB, error) {
+	postgresOnce.Do(func() {
+		dsn := BuildPostgresDSN()
+		db, err := Register(dsn, autoMigrate)
+		if err != nil {
+			postgresErr = err
+			return
+		}
+
+		// Batasi connection pool sql.DB agar ramah serverless
+		sqlDB, err := db.DB()
+		if err == nil {
+			sqlDB.SetMaxOpenConns(10)
+			sqlDB.SetMaxIdleConns(2)
+			sqlDB.SetConnMaxLifetime(5 * time.Minute)
+		}
+
+		postgresInstance = db
+	})
+
+	if postgresErr != nil {
+		postgresOnce = sync.Once{}
+		return nil, postgresErr
+	}
+
+	return postgresInstance, nil
+}
 
 func Register(dsn string, autoMigrate bool) (*gorm.DB, error) {
 	logLevel := logger.Warn
