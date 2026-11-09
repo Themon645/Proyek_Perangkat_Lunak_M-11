@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -154,7 +153,7 @@ func (c *PurchaseOrderController) Pay(w http.ResponseWriter, r *http.Request) {
 	po, err := c.service.Pay(id, proofPath)
 	if err != nil {
 		if uploaded {
-			_ = os.Remove(proofPath)
+			helper.DeletePaymentProof(proofPath)
 		}
 		helper.LogTransaction("ERROR", "PAYMENT", "payment failed id=%s: %v", id, err)
 		c.repositoryError(w, err)

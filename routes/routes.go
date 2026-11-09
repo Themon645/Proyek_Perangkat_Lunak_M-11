@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"m11/application"
@@ -96,6 +97,27 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 			"success": true,
 			"message": "MongoDB berhasil dibersihkan dan diisi 10 purchase orders & goods receipts bersih",
 		})
+	})
+
+	// Static file handler untuk bukti pembayaran (storage lokal atau fallback /tmp di serverless)
+	mux.HandleFunc("GET /storage/payment-proofs/{filename}", func(w http.ResponseWriter, r *http.Request) {
+		filename := filepath.Base(r.PathValue("filename"))
+		primary := filepath.Join("storage", "payment-proofs", filename)
+		if _, err := os.Stat(primary); err == nil {
+			http.ServeFile(w, r, primary)
+			return
+		}
+		fallback := filepath.Join(os.TempDir(), "storage", "payment-proofs", filename)
+		if _, err := os.Stat(fallback); err == nil {
+			http.ServeFile(w, r, fallback)
+			return
+		}
+		fallbackTemp := filepath.Join(os.TempDir(), filename)
+		if _, err := os.Stat(fallbackTemp); err == nil {
+			http.ServeFile(w, r, fallbackTemp)
+			return
+		}
+		http.NotFound(w, r)
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

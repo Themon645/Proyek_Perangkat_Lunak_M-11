@@ -236,6 +236,14 @@ Selama proses konfigurasi, beberapa kendala umum pada Vercel berhasil diidentifi
 - **Penyebab**: Rewrite internal Vercel mengubah `r.URL.Path` menjadi `/api/index.go`.
 - **Solusi**: Mengimplementasikan pengecekan header `x-matched-path` dan parsing `r.RequestURI` di layer routing untuk mengembalikan URL ke path aslinya sebelum dicocokkan oleh router.
 
+### Kasus 5: `mkdir storage: read-only file system` saat Upload Bukti Pembayaran
+- **Gejala**: Saat pengguna mengunggah bukti transfer melalui modal pelunasan (`POST /purchase-orders/:id/payment`), serverless mengembalikan HTTP 400 dengan pesan `INVALID_PAYMENT_PROOF: mkdir storage: read-only file system`.
+- **Penyebab**: Di lingkungan Serverless Vercel (container AWS Lambda), filesystem root (`/var/task`) berstatus *read-only*. Pemanggilan `os.MkdirAll("storage/payment-proofs")` ditolak oleh sistem operasi dengan kode `EROFS`.
+- **Solusi**: 
+  1. Menambahkan fungsi `GetProofStorageDir()` di `common/helper/storage.go` dengan fallback otomatis ke `os.TempDir()` (`/tmp` di Linux/Vercel) yang dijamin memiliki izin tulis disk.
+  2. Menambahkan fungsi `DeletePaymentProof()` untuk menangani penghapusan file baik di storage lokal maupun fallback `/tmp`.
+  3. Menyediakan route statis `GET /storage/payment-proofs/{filename}` pada router untuk melayani file bukti jika diakses kembali.
+
 ---
 
 ## 7. Manajemen Branch Git (`main`, `prod`, `local`)
