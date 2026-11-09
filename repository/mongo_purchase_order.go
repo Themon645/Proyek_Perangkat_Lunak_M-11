@@ -420,3 +420,4 @@ func (r *PurchaseOrderRepository) reportMongo(from, to time.Time) (map[string]in
 
 	return totals, nil
 }
+
