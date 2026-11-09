@@ -8,6 +8,9 @@ import (
 )
 
 func RegisterPurchaseOrderRoutes(route *http.ServeMux, service *application.PurchaseOrderService) {
+	if service == nil {
+		return
+	}
 	handler := controller.NewPurchaseOrderController(service)
 	receiptHandler := controller.NewGoodsReceiptController(service)
 	route.HandleFunc("GET /purchase-orders", handler.List)
@@ -20,3 +23,4 @@ func RegisterPurchaseOrderRoutes(route *http.ServeMux, service *application.Purc
 	route.HandleFunc("GET /reports/procurement", handler.Report)
 	route.HandleFunc("POST /goods-receipts", receiptHandler.Create)
 }
+
