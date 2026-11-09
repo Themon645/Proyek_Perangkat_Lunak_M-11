@@ -27,18 +27,19 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 	mux := http.NewServeMux()
 	RegisterPurchaseOrderRoutes(mux, service)
 
-	// Favicon handler agar browser tidak memicu error 404/500 saat meminta favicon
+	// Favicon handler
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// Root endpoint: mencegah error saat preview Vercel membuka root /
+	// Root endpoint: sambutan & info endpoint
 	rootHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"message": "M11 Procurement API Serverless on Vercel is online",
+			"database": "MongoDB Atlas",
 			"endpoints": []string{
 				"/health",
 				"/purchase-orders",
@@ -66,13 +67,34 @@ func Register(service *application.PurchaseOrderService) http.Handler {
 				dbStatus["mongodb"] = "connected"
 			}
 		} else {
-			dbStatus["mongodb"] = "not_configured (MONGODB_URI is empty in Vercel)"
+			dbStatus["mongodb"] = "not_configured (MONGODB_URI is empty)"
 		}
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"data":    dbStatus,
+		})
+	})
+
+	// Endpoint untuk membersihkan dan me-reset data MongoDB
+	mux.HandleFunc("POST /database/reset-and-seed", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mongoDB, err := database.GetMongoDatabase()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		if err := database.ResetAndSeedMongo(mongoDB); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"message": "MongoDB berhasil dibersihkan dan diisi 10 purchase orders & goods receipts bersih",
 		})
 	})
 

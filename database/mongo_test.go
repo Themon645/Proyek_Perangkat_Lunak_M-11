@@ -1,10 +1,13 @@
 package database
 
 import (
+	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/joho/godotenv"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestGetMongoClientWithoutURI(t *testing.T) {
@@ -27,7 +30,6 @@ func TestGetMongoClientWithoutURI(t *testing.T) {
 func TestLiveMongoConnection(t *testing.T) {
 	_ = godotenv.Load("../.env")
 
-	// Reset singleton
 	mongoClientInstance = nil
 	mongoOnce = sync.Once{}
 	mongoInitErr = nil
@@ -42,5 +44,13 @@ func TestLiveMongoConnection(t *testing.T) {
 		t.Fatalf("Failed to get database: %v", err)
 	}
 
-	t.Logf("Successfully connected to MongoDB Atlas! Database: %s, Client: %p", db.Name(), client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collections, err := db.ListCollectionNames(ctx, bson.M{})
+	if err != nil {
+		t.Fatalf("Failed to list collections: %v", err)
+	}
+
+	t.Logf("Successfully connected to MongoDB Atlas! Database: %s, Client: %p, Collections: %v", db.Name(), client, collections)
 }

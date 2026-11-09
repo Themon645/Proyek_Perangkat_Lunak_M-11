@@ -10,13 +10,14 @@ import (
 )
 
 type PaymentRecord struct {
-	ID                uint          `json:"id" gorm:"primaryKey"`
-	PurchaseOrderUUID uuid.UUID     `json:"-"`
-	Amount            int64         `json:"amount" gorm:"not null"`
-	PaidAt            time.Time     `json:"paid_at" gorm:"not null"`
-	ProofPath         string        `json:"proof_path" gorm:"not null"`
-	PurchaseOrder     PurchaseOrder `json:"-" gorm:"foreignKey:PurchaseOrderUUID;references:UUID"`
-	helper.AuditFields
+	ID                uint          `json:"id" gorm:"primaryKey" bson:"id,omitempty"`
+	PurchaseOrderID   string        `json:"purchase_order_id,omitempty" gorm:"-" bson:"purchase_order_id,omitempty"`
+	PurchaseOrderUUID uuid.UUID     `json:"-" bson:"purchase_order_uuid,omitempty"`
+	Amount            int64         `json:"amount" gorm:"not null" bson:"amount"`
+	PaidAt            time.Time     `json:"paid_at" gorm:"not null" bson:"paid_at"`
+	ProofPath         string        `json:"proof_path" gorm:"not null" bson:"proof_path"`
+	PurchaseOrder     PurchaseOrder `json:"-" gorm:"foreignKey:PurchaseOrderUUID;references:UUID" bson:"-"`
+	helper.AuditFields              `bson:"inline"`
 }
 
 func (p *PaymentRecord) BeforeCreate(*gorm.DB) error {

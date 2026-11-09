@@ -6,8 +6,11 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	"m11/application"
 	"m11/common/helper"
 	"m11/database"
+	"m11/integration"
+	"m11/repository"
 	"m11/routes"
 )
 
@@ -23,19 +26,32 @@ func main() {
 		port = "8080"
 	}
 
-	// 1. Inisialisasi koneksi pool singleton MongoDB jika MONGODB_URI dikonfigurasi
+	var repo *repository.PurchaseOrderRepository
+
+	// 1. Inisialisasi MongoDB jika MONGODB_URI dikonfigurasi
 	if os.Getenv("MONGODB_URI") != "" {
-		if _, err := database.GetMongoClient(); err != nil {
+		if mongoDB, err := database.GetMongoDatabase(); err != nil {
 			helper.LogError("MongoDB init error: %v", err)
 		} else {
-			helper.LogInfo("MongoDB connected successfully")
+			_ = database.SeedMongo(mongoDB)
+			repo = repository.NewMongoPurchaseOrderRepository(mongoDB)
+			helper.LogInfo("MongoDB repository connected and active")
 		}
 	}
 
-	// Gunakan router terpusat yang menangani root (/), health (/health), dan endpoints lainnya
-	handler := routes.Register(nil)
+	var service *application.PurchaseOrderService
+	if repo != nil {
+		var publisher integration.GRNPublisher
+		if endpoint := os.Getenv("M9_GRN_ENDPOINT"); endpoint != "" {
+			m9Queue := integration.NewM9Queue(endpoint, nil)
+			m9Queue.Start()
+			publisher = m9Queue
+		}
+		service = application.NewPurchaseOrderService(repo, publisher)
+	}
+
+	handler := routes.Register(service)
 
 	helper.LogInfo("Server running on port :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
-
