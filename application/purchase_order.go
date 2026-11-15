@@ -58,6 +58,10 @@ func (s *PurchaseOrderService) CreateGoodsReceipt(req *dto.CreateGoodsReceiptReq
 	return receipt, err
 }
 
+func (s *PurchaseOrderService) ListGoodsReceipts(poID string) ([]model.GoodsReceipt, error) {
+	return s.repo.ListGoodsReceipts(poID)
+}
+
 func (s *PurchaseOrderService) Pay(id, proof string) (*model.PurchaseOrder, error) {
 	return s.repo.Pay(id, proof)
 }

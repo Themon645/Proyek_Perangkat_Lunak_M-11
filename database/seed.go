@@ -79,6 +79,9 @@ func SeedDummy(db *gorm.DB) error {
 					Received:          item.receivedQty,
 				}},
 			}
+			if item.payment == common.PaymentPaid {
+				po.Proof = "https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample-receipt.pdf"
+			}
 			if item.status == common.StatusReceived || item.status == common.StatusReceivedPartial {
 				po.ReceivedAt = &now
 			}

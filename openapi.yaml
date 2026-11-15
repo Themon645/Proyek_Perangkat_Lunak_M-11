@@ -234,7 +234,7 @@ paths:
             schema:
               $ref: '#/components/schemas/PayPurchaseOrderRequest'
             example:
-              proof: storage/payment-proofs/bukti-transfer-mandiri.pdf
+              proof: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/bukti-transfer-mandiri.pdf
       responses:
         '200':
           description: Pembayaran berhasil diverifikasi dan dicatat
@@ -289,6 +289,32 @@ paths:
                     example: 6500000
 
   /goods-receipts:
+    get:
+      tags: [Goods Receipts]
+      summary: Mendapatkan seluruh daftar goods receipt (GRN)
+      description: Mengembalikan seluruh data riwayat penerimaan barang fisik/surat jalan yang tercatat di gudang, dapat difilter berdasarkan query parameter `purchase_order_id`.
+      parameters:
+        - in: query
+          name: purchase_order_id
+          required: false
+          schema:
+            type: string
+          description: Filter data goods receipt berdasarkan nomor ID Purchase Order
+        - in: query
+          name: po
+          required: false
+          schema:
+            type: string
+          description: Alias filter nomor ID Purchase Order
+      responses:
+        '200':
+          description: Daftar goods receipt berhasil diambil
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GoodsReceiptResponse'
     post:
       tags: [Goods Receipts]
       summary: Membuat goods receipt baru (GRN)
@@ -366,36 +392,6 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
-  /storage/payment-proofs/{filename}:
-    get:
-      tags: [Storage]
-      summary: Mengunduh atau melihat berkas bukti transfer
-      parameters:
-        - name: filename
-          in: path
-          required: true
-          schema:
-            type: string
-          example: 9e32fba176c12814d45.pdf
-      responses:
-        '200':
-          description: Berkas bukti transfer
-          content:
-            application/pdf:
-              schema:
-                type: string
-                format: binary
-            image/jpeg:
-              schema:
-                type: string
-                format: binary
-            image/png:
-              schema:
-                type: string
-                format: binary
-        '404':
-          $ref: '#/components/responses/NotFound'
-
 components:
   parameters:
     PurchaseOrderId:
@@ -426,7 +422,13 @@ components:
           enum: [unpaid, paid]
         proof:
           type: string
-          example: storage/payment-proofs/e84cb2176a91.pdf
+          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf
+        proof_url:
+          type: string
+          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf
+        attachment_url:
+          type: string
+          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf
         total:
           type: integer
           format: int64
@@ -521,7 +523,7 @@ components:
         proof:
           type: string
           minLength: 1
-          example: storage/payment-proofs/bukti-transfer-2026.pdf
+          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf
 
     CreateGoodsReceiptRequest:
       type: object
@@ -596,6 +598,39 @@ components:
         qty_received:
           type: integer
           example: 50
+
+    GoodsReceiptResponse:
+      type: object
+      properties:
+        receipt_no:
+          type: string
+          example: SJ-2026/X/9812
+        purchase_order_id:
+          type: string
+          example: PO-2026-001
+        received_date:
+          type: string
+          example: '2026-11-09'
+        receiver:
+          type: string
+          example: Petugas Gudang
+        notes:
+          type: string
+          example: Barang diterima dalam kondisi baik
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              item_id:
+                type: string
+                example: ITEM-101
+              item_name:
+                type: string
+                example: Kertas HVS A4
+              qty_received:
+                type: integer
+                example: 50
 
     GoodsReceiptHistory:
       type: object

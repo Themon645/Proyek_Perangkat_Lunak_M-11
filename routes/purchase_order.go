@@ -23,5 +23,5 @@ func RegisterPurchaseOrderRoutes(route *http.ServeMux, service *application.Purc
 	route.HandleFunc("POST /purchase-orders/{id}/payment", handler.Pay)
 	route.HandleFunc("GET /reports/procurement", handler.Report)
 	route.HandleFunc("POST /goods-receipts", receiptHandler.Create)
+	route.HandleFunc("GET /goods-receipts", receiptHandler.List)
 }
-

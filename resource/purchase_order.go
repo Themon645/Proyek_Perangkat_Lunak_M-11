@@ -1,15 +1,22 @@
 package resource
 
-import "m11/model"
+import (
+	"strings"
+
+	"m11/common/helper"
+	"m11/model"
+)
 
 type PurchaseOrder struct {
-	ID       string              `json:"id"`
-	Supplier string              `json:"supplier"`
-	Status   string              `json:"status"`
-	Payment  string              `json:"payment"`
-	Proof    string              `json:"proof,omitempty"`
-	Total    int64               `json:"total"`
-	Items    []PurchaseOrderItem `json:"items"`
+	ID            string              `json:"id"`
+	Supplier      string              `json:"supplier"`
+	Status        string              `json:"status"`
+	Payment       string              `json:"payment"`
+	Proof         string              `json:"proof,omitempty"`
+	ProofURL      string              `json:"proof_url,omitempty"`
+	AttachmentURL string              `json:"attachment_url,omitempty"`
+	Total         int64               `json:"total"`
+	Items         []PurchaseOrderItem `json:"items"`
 }
 
 type PurchaseOrderItem struct {
@@ -21,13 +28,26 @@ type PurchaseOrderItem struct {
 }
 
 func NewPurchaseOrder(po model.PurchaseOrder) PurchaseOrder {
+	proof := strings.TrimSpace(po.Proof)
+	if proof == "" && len(po.Payments) > 0 {
+		proof = strings.TrimSpace(po.Payments[len(po.Payments)-1].ProofPath)
+	}
+
+	proofURL, attachmentURL, cloudURL := helper.ResolveProofURLs(proof)
+	formattedProof := cloudURL
+	if formattedProof == "" {
+		formattedProof = attachmentURL
+	}
+
 	result := PurchaseOrder{
-		ID:       po.ID,
-		Supplier: po.Supplier,
-		Status:   po.Status,
-		Payment:  po.Payment,
-		Proof:    po.Proof,
-		Items:    make([]PurchaseOrderItem, 0, len(po.Items)),
+		ID:            po.ID,
+		Supplier:      po.Supplier,
+		Status:        po.Status,
+		Payment:       po.Payment,
+		Proof:         formattedProof,
+		ProofURL:      proofURL,
+		AttachmentURL: attachmentURL,
+		Items:         make([]PurchaseOrderItem, 0, len(po.Items)),
 	}
 	for _, item := range po.Items {
 		result.Total += int64(item.Quantity) * item.UnitCost

@@ -10,6 +10,7 @@ import (
 	"m11/application"
 	"m11/common/helper"
 	"m11/dto"
+	"m11/resource"
 )
 
 type GoodsReceiptController struct {
@@ -69,4 +70,25 @@ func (c *GoodsReceiptController) Create(w http.ResponseWriter, r *http.Request) 
 	}
 	helper.LogTransaction("CREATE", "GOODS_RECEIPT", "receipt_no=%s purchase_order_id=%s", receipt.ReceiptNo, req.PurchaseOrderID)
 	jsonResponse(w, http.StatusCreated, receipt)
+}
+
+func (c *GoodsReceiptController) List(w http.ResponseWriter, r *http.Request) {
+	poID := strings.TrimSpace(r.URL.Query().Get("purchase_order_id"))
+	if poID == "" {
+		poID = strings.TrimSpace(r.URL.Query().Get("po"))
+	}
+	receipts, err := c.service.ListGoodsReceipts(poID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			errorJSON(w, http.StatusNotFound, "purchase order not found")
+			return
+		}
+		errorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	result := make([]resource.GoodsReceiptResponse, 0, len(receipts))
+	for _, receipt := range receipts {
+		result = append(result, resource.NewGoodsReceiptResponse(receipt))
+	}
+	jsonResponse(w, http.StatusOK, result)
 }

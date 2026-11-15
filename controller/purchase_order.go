@@ -180,7 +180,7 @@ func (c *PurchaseOrderController) Pay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	helper.LogTransaction("UPDATE", "PAYMENT", "paid purchase_order_id=%s", id)
-	jsonResponse(w, http.StatusOK, po)
+	jsonResponse(w, http.StatusOK, resource.NewPurchaseOrder(*po))
 }
 
 func paymentProofError(w http.ResponseWriter, message string) {

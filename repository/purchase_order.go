@@ -4,12 +4,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 	"m11/common"
 	"m11/common/validation"
 	"m11/dto"
 	"m11/model"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 var ErrNotFound = gorm.ErrRecordNotFound
@@ -28,7 +29,7 @@ func (r *PurchaseOrderRepository) Create(po *model.PurchaseOrder) error {
 
 func (r *PurchaseOrderRepository) Find(id string) (*model.PurchaseOrder, error) {
 	var po model.PurchaseOrder
-	if err := r.db.Preload("Items").First(&po, "id = ?", id).Error; err != nil {
+	if err := r.db.Preload("Items").Preload("Payments").First(&po, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &po, nil
@@ -36,7 +37,7 @@ func (r *PurchaseOrderRepository) Find(id string) (*model.PurchaseOrder, error) 
 
 func (r *PurchaseOrderRepository) List() ([]model.PurchaseOrder, error) {
 	var orders []model.PurchaseOrder
-	if err := r.db.Preload("Items").Order("created_at ASC").Find(&orders).Error; err != nil {
+	if err := r.db.Preload("Items").Preload("Payments").Order("created_at ASC").Find(&orders).Error; err != nil {
 		return nil, err
 	}
 	return orders, nil
@@ -44,7 +45,7 @@ func (r *PurchaseOrderRepository) List() ([]model.PurchaseOrder, error) {
 
 func (r *PurchaseOrderRepository) Approved() ([]model.PurchaseOrder, error) {
 	var orders []model.PurchaseOrder
-	if err := r.db.Preload("Items").Where("status = ?", common.StatusApproved).Order("created_at ASC").Find(&orders).Error; err != nil {
+	if err := r.db.Preload("Items").Preload("Payments").Where("status = ?", common.StatusApproved).Order("created_at ASC").Find(&orders).Error; err != nil {
 		return nil, err
 	}
 	return orders, nil
@@ -52,10 +53,31 @@ func (r *PurchaseOrderRepository) Approved() ([]model.PurchaseOrder, error) {
 
 func (r *PurchaseOrderRepository) ListByStatus(status string) ([]model.PurchaseOrder, error) {
 	var orders []model.PurchaseOrder
-	if err := r.db.Preload("Items").Where("status = ?", status).Order("created_at ASC").Find(&orders).Error; err != nil {
+	if err := r.db.Preload("Items").Preload("Payments").Where("status = ?", status).Order("created_at ASC").Find(&orders).Error; err != nil {
 		return nil, err
 	}
 	return orders, nil
+}
+
+func (r *PurchaseOrderRepository) ListGoodsReceipts(poID string) ([]model.GoodsReceipt, error) {
+	var receipts []model.GoodsReceipt
+	query := r.db.Preload("Items.Item").Preload("PurchaseOrder")
+	if poID != "" {
+		var po model.PurchaseOrder
+		if err := r.db.First(&po, "id = ?", poID).Error; err != nil {
+			return nil, err
+		}
+		query = query.Where("purchase_order_uuid = ?", po.UUID)
+	}
+	if err := query.Order("received_date DESC, created_at DESC").Find(&receipts).Error; err != nil {
+		return nil, err
+	}
+	for i := range receipts {
+		if receipts[i].PurchaseOrder.ID != "" {
+			receipts[i].PurchaseOrderID = receipts[i].PurchaseOrder.ID
+		}
+	}
+	return receipts, nil
 }
 
 func (r *PurchaseOrderRepository) ReceiptHistory(id string) (*model.PurchaseOrder, []model.GoodsReceipt, error) {

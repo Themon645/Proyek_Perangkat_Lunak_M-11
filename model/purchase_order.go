@@ -15,6 +15,8 @@ type PurchaseOrder struct {
 	Status        string              `json:"status"`
 	Payment       string              `json:"payment"`
 	Proof         string              `json:"proof,omitempty"`
+	ProofURL      string              `json:"proof_url,omitempty" gorm:"-"`
+	AttachmentURL string              `json:"attachment_url,omitempty" gorm:"-"`
 	Items         []PurchaseOrderItem `json:"items" gorm:"foreignKey:PurchaseOrderUUID;references:UUID;constraint:OnDelete:CASCADE"`
 	GoodsReceipts []GoodsReceipt      `json:"goods_receipts,omitempty" gorm:"foreignKey:PurchaseOrderUUID;references:UUID;-:migration"`
 	Payments      []PaymentRecord     `json:"payments,omitempty" gorm:"foreignKey:PurchaseOrderUUID;references:UUID;constraint:OnDelete:CASCADE"`

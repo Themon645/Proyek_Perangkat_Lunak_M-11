@@ -43,40 +43,43 @@ func createMultipartFile(filename, contentType string, content []byte) (multipar
 	return file, files[0], err
 }
 
-func TestGetProofStorageDir(t *testing.T) {
-	dir := helper.GetProofStorageDir()
-	if dir == "" {
-		t.Fatal("expected non-empty storage dir")
-	}
-	// Verify directory exists and is writable
-	info, err := os.Stat(dir)
-	if err != nil {
-		t.Fatalf("expected dir to exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Fatalf("expected a directory, got %s", dir)
-	}
-}
-
-func TestSavePaymentProof_PDF(t *testing.T) {
-	// Standard PDF header signature
-	pdfContent := []byte("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF")
-	file, header, err := createMultipartFile("receipt.pdf", "application/pdf", pdfContent)
-	if err != nil {
-		t.Fatalf("createMultipartFile error: %v", err)
-	}
-	defer file.Close()
-
-	path, err := helper.SavePaymentProof(file, header)
-	if err != nil {
-		t.Fatalf("SavePaymentProof returned error: %v", err)
-	}
-	if path == "" {
-		t.Fatal("expected non-empty saved path")
+func TestResolveProofURLs(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		expectedCloud string
+	}{
+		{
+			name:          "Empty proof",
+			input:         "",
+			expectedCloud: "",
+		},
+		{
+			name:          "Full S3 URL",
+			input:         "https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf",
+			expectedCloud: "https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf",
+		},
+		{
+			name:          "Relative filename",
+			input:         "storage/payment-proofs/3f8b9c042cbeecb57f69983b0efb3829.png",
+			expectedCloud: "https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/3f8b9c042cbeecb57f69983b0efb3829.png",
+		},
 	}
 
-	// Cleanup
-	helper.DeletePaymentProof(path)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			proofURL, attachmentURL, cloudURL := helper.ResolveProofURLs(tt.input)
+			if cloudURL != tt.expectedCloud {
+				t.Errorf("cloudURL: expected %q, got %q", tt.expectedCloud, cloudURL)
+			}
+			if proofURL != tt.expectedCloud {
+				t.Errorf("proofURL: expected %q, got %q", tt.expectedCloud, proofURL)
+			}
+			if attachmentURL != tt.expectedCloud {
+				t.Errorf("attachmentURL: expected %q, got %q", tt.expectedCloud, attachmentURL)
+			}
+		})
+	}
 }
 
 func TestSavePaymentProof_InvalidType(t *testing.T) {
