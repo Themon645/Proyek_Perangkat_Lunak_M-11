@@ -1,8 +1,11 @@
 openapi: 3.0.3
 info:
   title: M11 Procurement API
-  description: API Purchase Order, Goods Receipt, dan pelunasan tagihan supplier (Araya Hub BPU Universitas Pasundan) terintegrasi Vercel Serverless Function & PostgreSQL (Neon Cloud).
-  version: 1.2.0
+  description: >
+    API Manajemen Pengadaan Barang (Purchase Order), Penerimaan Barang Fisik (Goods Receipt Note / GRN),
+    dan Pelunasan Tagihan Supplier dengan SOP Three-Way Matching (Araya Business Hub BPU Universitas Pasundan).
+    Terintegrasi Vercel Serverless Function, basis data cloud PostgreSQL (Neon Cloud Pooler), dan Neon S3 Object Storage.
+  version: 1.3.0
 
 servers:
   - url: https://proyek-perangkat-lunak-m-11.vercel.app
@@ -12,22 +15,22 @@ servers:
 
 tags:
   - name: Purchase Orders
-    description: Manajemen pengadaan barang dan siklus status PO
+    description: Manajemen pengadaan barang, siklus status PO, dan pelunasan tagihan supplier
   - name: Goods Receipts
-    description: Pencatatan penerimaan barang fisik (GRN) dan surat jalan
+    description: Pencatatan penerimaan fisik barang (GRN), verifikasi surat jalan, dan split shipment
   - name: Reports
-    description: Agregasi data belanja dan pelaporan pengadaan
+    description: Rekapitulasi belanja dan pelaporan pengadaan per vendor
   - name: Storage
-    description: Layanan berkas statis dan bukti pembayaran
+    description: Unduh dan pratinjau berkas bukti bayar transfer (Neon S3 Object Storage)
   - name: System
-    description: Monitoring kesehatan serverless dan utilitas database
+    description: Health check serverless dan utilitas reset/seed basis data
 
 paths:
   /:
     get:
       tags: [System]
       summary: Root health & welcome info
-      description: Mengembalikan pesan sambutan dan daftar endpoint yang tersedia di runtime Vercel.
+      description: Mengembalikan pesan sambutan dan daftar endpoint aktif pada runtime serverless.
       responses:
         '200':
           description: Serverless function aktif
@@ -54,7 +57,7 @@ paths:
     get:
       tags: [System]
       summary: Health check serverless & database
-      description: Memeriksa kesiapan runtime serverless dan status koneksi database (PostgreSQL Neon).
+      description: Memeriksa kesiapan runtime serverless dan koneksi ke PostgreSQL Neon.
       responses:
         '200':
           description: Status kesehatan sistem
@@ -79,11 +82,13 @@ paths:
   /database/reset-and-seed:
     post:
       tags: [System]
-      summary: Reset & seed MongoDB Atlas
-      description: Menghapus data lama dan menginisialisasi 10 Purchase Order serta 10 Goods Receipt bersih dengan alur pengadaan yang realistis.
+      summary: Reset & seed PostgreSQL (Neon Cloud)
+      description: >
+        Membersihkan seluruh data tabel transaksi pengadaan dan menginisialisasi 10 Purchase Order multi-item (21 items),
+        5 dokumen GRN (10 item masuk), dan 3 bukti pelunasan dengan variasi status realistis.
       responses:
         '200':
-          description: Database berhasil direset dan di-seed
+          description: Database berhasil direset dan diisi data seeder baru
           content:
             application/json:
               schema:
@@ -94,15 +99,64 @@ paths:
                     example: true
                   message:
                     type: string
-                    example: MongoDB berhasil dibersihkan dan diisi 10 purchase orders & goods receipts bersih
+                    example: PostgreSQL (Neon) berhasil dibersihkan dan diisi 10 purchase orders multi-item & goods receipts
         '500':
           $ref: '#/components/responses/ServerError'
 
   /purchase-orders:
     get:
       tags: [Purchase Orders]
-      summary: Mendapatkan seluruh daftar purchase order
-      description: Mengembalikan daftar seluruh PO terurut dari yang terbaru, termasuk rincian item, kuantitas diterima, dan total biaya.
+      summary: Mendapatkan seluruh daftar purchase order (mendukung filter & pencarian)
+      description: >
+        Mengembalikan daftar purchase order terurut dari yang terlama dibuat (ASC).
+        Secara default mengembalikan seluruh 10 PO (semua status: approved, pending, received partial, received).
+        Mendukung filter status spesifik, pengecualian status (selain disetujui), filter tanggal, dan pencarian global.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Filter status PO: `approved`, `received partial`, `received`, `pending`.
+            Bisa menggunakan `selain-disetujui`, `non-approved`, atau `!approved` untuk memunculkan status selain disetujui.
+          example: selain-disetujui
+        - name: exclude_status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Mengecualikan status tertentu (contoh `approved`).
+          example: approved
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter tanggal terbit PO (format YYYY-MM-DD).
+          example: '2026-11-10'
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Batas awal tanggal terbit PO.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Batas akhir tanggal terbit PO.
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Pencarian teks pada ID PO atau Nama Supplier (case-insensitive).
+          example: Mitra
       responses:
         '200':
           description: Daftar purchase order berhasil diambil
@@ -117,7 +171,7 @@ paths:
 
     post:
       tags: [Purchase Orders]
-      summary: Membuat purchase order baru
+      summary: Membuat purchase order baru (Multi-Item)
       requestBody:
         required: true
         content:
@@ -133,6 +187,10 @@ paths:
                   name: Kertas HVS A4 80gr Sinar Dunia
                   quantity: 100
                   unit_cost: 65000
+                - id: ITEM-101-B
+                  name: Map Odner Bantex Folio 7cm
+                  quantity: 50
+                  unit_cost: 35000
       responses:
         '201':
           description: Purchase order berhasil dibuat
@@ -149,6 +207,7 @@ paths:
     get:
       tags: [Purchase Orders]
       summary: Mendapatkan detail purchase order berdasarkan ID
+      description: Mengembalikan detail lengkap satu PO, seluruh daftar barang pesanan, data pelunasan (tanggal bayar, bank, bukti bayar), dan tautan unduh.
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
       responses:
@@ -166,8 +225,8 @@ paths:
   /purchase-orders/{id}/receipts:
     get:
       tags: [Goods Receipts]
-      summary: Mendapatkan riwayat penerimaan purchase order (Multi-Receipt)
-      description: Mengembalikan seluruh tahap penerimaan (surat jalan) per tanggal dengan rincian penerima, catatan, dan item yang diterima.
+      summary: Mendapatkan riwayat penerimaan barang per PO (Multi-Receipt)
+      description: Mengembalikan seluruh tahap penerimaan surat jalan (GRN) pada nomor PO tersebut.
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
       responses:
@@ -193,10 +252,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ReceivePurchaseOrderRequest'
-            example:
-              items:
-                - id: ITEM-101
-                  quantity: 50
       responses:
         '200':
           description: Penerimaan barang berhasil dicatat
@@ -214,8 +269,12 @@ paths:
   /purchase-orders/{id}/payment:
     post:
       tags: [Purchase Orders]
-      summary: Mencatat pelunasan tagihan purchase order
-      description: Mengunggah berkas bukti transfer fisik (PDF/JPG/PNG maks 5 MB) atau referensi bukti, kemudian memperbarui status pembayaran PO menjadi `paid`.
+      summary: Mencatat pelunasan tagihan supplier (Three-Way Matching SOP)
+      description: >
+        Memproses pelunasan faktur tagihan PO ke vendor.
+        Sesuai SOP Three-Way Matching BPU, pelunasan HANYA DIIZINKAN jika barang pesanan sudah 100% lengkap diterima di gudang (`status: received`).
+        Jika PO masih `received partial` atau `approved`, permintaan ditolak dengan kode `PO_NOT_FULLY_RECEIVED` (422).
+        Mendukung unggahan file bukti transfer fisik (multipart/form-data) atau URL bukti S3 (application/json).
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
       requestBody:
@@ -230,33 +289,98 @@ paths:
                   type: string
                   format: binary
                   description: Berkas bukti transfer (PDF, JPG, atau PNG); maksimal 5 MB.
+                bank:
+                  type: string
+                  description: Nama bank tujuan transfer vendor.
+                  example: Bank Mandiri (1310-0982-4412 a.n. Vendor)
+                paid_at:
+                  type: string
+                  format: date
+                  description: Tanggal pembayaran dilakukan (tidak boleh masa depan atau sebelum tanggal PO).
+                  example: '2026-11-13'
           application/json:
             schema:
               $ref: '#/components/schemas/PayPurchaseOrderRequest'
             example:
-              proof: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/bukti-transfer-mandiri.pdf
+              proof: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample-receipt.pdf
+              bank: Bank Mandiri (1310-0982-4412 a.n. Vendor)
+              paid_at: '2026-11-13'
       responses:
         '200':
-          description: Pembayaran berhasil diverifikasi dan dicatat
+          description: Pembayaran berhasil diverifikasi dan dicatat (Status PO berubah menjadi paid)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PurchaseOrder'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Tanggal bayar tidak valid (di masa depan / backdated) atau format bukti bayar salah
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          description: PO sudah berstatus lunas sebelumnya
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Barang pesanan belum 100% diterima (PO masih received partial / approved)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /purchase-orders/{id}/proof:
+    get:
+      tags: [Storage]
+      summary: Mengunduh / membuka berkas bukti pelunasan PO
+      description: Mengembalikan HTTP redirect 302 Found ke tautan dokumen resmi bukti pembayaran di Neon S3 Object Storage.
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      responses:
+        '302':
+          description: Redirect ke berkas dokumen bukti pembayaran di Cloud Storage
+          headers:
+            Location:
+              schema:
+                type: string
+              description: URL dokumen bukti bayar di Neon S3
+        '404':
+          description: Bukti pembayaran belum diunggah atau PO tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /storage/payment-proofs/{filename}:
+    get:
+      tags: [Storage]
+      summary: Direct file serving bukti transfer
+      description: Endpoint statis untuk mengunduh bukti transfer berdasarkan nama berkas via HTTP 302 redirect ke Neon S3.
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          example: sample-receipt.pdf
+      responses:
+        '302':
+          description: Redirect ke file di S3
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /purchase-orders/approved:
     get:
       tags: [Purchase Orders]
-      summary: Mendapatkan daftar purchase order yang berstatus disetujui (approved)
-      description: Mengembalikan seluruh PO dengan status `approved` yang siap untuk diproses penerimaan barangnya (GRN).
+      summary: Mendapatkan daftar PO yang siap dicatat penerimaan barangnya (GRN Dropdown)
+      description: Mengembalikan seluruh PO dengan status `approved` DAN `received partial` yang masih memiliki sisa barang yang perlu diterima di gudang.
       responses:
         '200':
-          description: Daftar purchase order yang telah disetujui
+          description: Daftar purchase order yang siap dicatat GRN
           content:
             application/json:
               schema:
@@ -269,10 +393,13 @@ paths:
   /purchase-orders/unpaid:
     get:
       tags: [Purchase Orders]
-      summary: Mendapatkan daftar purchase order yang belum lunas
+      summary: Mendapatkan daftar tagihan siap bayar (Three-Way Matching)
+      description: >
+        Mengembalikan daftar PO yang belum dibayar (`payment: unpaid`) DAN barangnya sudah 100% lengkap diterima di gudang (`status: received`).
+        PO yang masih berstatus `received partial` secara ketat tidak disertakan.
       responses:
         '200':
-          description: Daftar tagihan belum lunas dan total nilai akumulasi
+          description: Daftar tagihan siap bayar dan akumulasi total nominal
           content:
             application/json:
               schema:
@@ -291,8 +418,8 @@ paths:
   /goods-receipts:
     get:
       tags: [Goods Receipts]
-      summary: Mendapatkan seluruh daftar goods receipt (GRN)
-      description: Mengembalikan seluruh data riwayat penerimaan barang fisik/surat jalan yang tercatat di gudang, dapat difilter berdasarkan query parameter `purchase_order_id`.
+      summary: Mendapatkan seluruh riwayat Goods Receipt Note (GRN) terpadu
+      description: Mengembalikan seluruh dokumen surat jalan penerimaan barang dari seluruh PO di gudang. Mendukung filter PO, tanggal, dan pencarian.
       parameters:
         - in: query
           name: purchase_order_id
@@ -306,19 +433,45 @@ paths:
           schema:
             type: string
           description: Alias filter nomor ID Purchase Order
+        - in: query
+          name: date
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter tanggal penerimaan (YYYY-MM-DD)
+        - in: query
+          name: q
+          required: false
+          schema:
+            type: string
+          description: Pencarian kata kunci nomor surat jalan, penerima, atau PO
       responses:
         '200':
-          description: Daftar goods receipt berhasil diambil
+          description: Riwayat dokumen GRN global berhasil diambil
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/GoodsReceiptResponse'
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      goods_receipts:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/GoodsReceiptResponse'
     post:
       tags: [Goods Receipts]
-      summary: Membuat goods receipt baru (GRN)
-      description: Menyimpan dokumen penerimaan surat jalan, memvalidasi kuantitas terhadap sisa pesanan, dan memperbarui status PO secara atomik (`received partial` atau `received`).
+      summary: Mencatat penerimaan barang fisik baru (GRN / Surat Jalan)
+      description: >
+        Menyimpan dokumen penerimaan barang fisik dari vendor.
+        Validasi: nomor surat jalan maksimal 20 karakter, kuantitas bilangan bulat integer non-negatif,
+        tanggal diterima tidak boleh di masa depan dan tidak boleh sebelum tanggal PO dibuat,
+        serta catatan inspeksi otomatis disanitasi dari injeksi skrip XSS.
       requestBody:
         required: true
         content:
@@ -328,15 +481,17 @@ paths:
             example:
               purchase_order_id: PO-2026-001
               receipt_no: SJ-2026/X/9812
-              received_date: '2026-11-09'
-              receiver: Petugas Gudang
-              notes: Barang diterima dalam kondisi baik
+              received_date: '2026-11-12'
+              receiver: Tyezar Hasan (Staff Gudang)
+              notes: Barang dalam kondisi baik dan tersegel utuh
               items:
                 - item_id: ITEM-101
                   qty_received: 50
+                - item_id: ITEM-101-B
+                  qty_received: 25
       responses:
         '201':
-          description: Goods receipt berhasil dibuat
+          description: Dokumen GRN berhasil dicatat dan status PO diperbarui
           content:
             application/json:
               schema:
@@ -347,11 +502,35 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          description: Validasi gagal (Kuantitas desimal, Surat Jalan > 20 char, Qty melebihi sisa, atau Tanggal tidak valid)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /goods-receipt:
+    get:
+      tags: [Goods Receipts]
+      summary: Alias endpoint GET /goods-receipts
+      description: Alias singular rute untuk kompatibilitas integrasi Frontend.
+      responses:
+        '200':
+          description: Daftar goods receipt berhasil diambil
+    post:
+      tags: [Goods Receipts]
+      summary: Alias endpoint POST /goods-receipts
+      description: Alias singular rute untuk pencatatan GRN.
+      requestBody:
+        $ref: '#/paths/~1goods-receipts/post/requestBody'
+      responses:
+        '201':
+          description: Dokumen GRN berhasil dicatat
 
   /reports/procurement:
     get:
       tags: [Reports]
-      summary: Mendapatkan rekap laporan pengadaan
+      summary: Mendapatkan rekapitulasi laporan pengadaan belanja per vendor
       parameters:
         - name: from
           in: query
@@ -409,32 +588,77 @@ components:
         id:
           type: string
           example: PO-2026-001
+        nomor_po:
+          type: string
+          example: PO-2026-001
         supplier:
+          type: string
+          example: PT Graha Sarana Mitra
+        supplier_name:
           type: string
           example: PT Graha Sarana Mitra
         status:
           type: string
           example: received partial
-          enum: [submitted, approved, received partial, received, rejected]
+          enum: [pending, approved, received partial, received, rejected]
         payment:
           type: string
           example: unpaid
           enum: [unpaid, paid]
+        order_date:
+          type: string
+          format: date-time
+          example: '2026-11-10T08:30:00Z'
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-11-10T08:30:00Z'
+        received_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-11-12T10:15:00Z'
+        paid_at:
+          type: string
+          format: date
+          nullable: true
+          example: '2026-11-13'
+        tanggal_bayar:
+          type: string
+          format: date
+          nullable: true
+          example: '2026-11-13'
+        bank:
+          type: string
+          nullable: true
+          example: Bank Mandiri (1310-0982-4412 a.n. Vendor)
+        bank_tujuan:
+          type: string
+          nullable: true
+          example: Bank Mandiri (1310-0982-4412 a.n. Vendor)
         proof:
           type: string
-          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf
+          nullable: true
+          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample-receipt.pdf
         proof_url:
           type: string
-          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf
+          nullable: true
+          example: https://proyek-perangkat-lunak-m-11.vercel.app/purchase-orders/PO-2026-002/proof
         attachment_url:
           type: string
-          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf
+          nullable: true
+          example: https://proyek-perangkat-lunak-m-11.vercel.app/purchase-orders/PO-2026-002/proof
         total:
           type: integer
           format: int64
-          example: 6500000
+          example: 8250000
+        total_tagihan:
+          type: integer
+          format: int64
+          example: 8250000
         items:
           type: array
+          description: Daftar seluruh rincian barang (mendukung multi-item)
           items:
             $ref: '#/components/schemas/PurchaseOrderItem'
 
@@ -444,7 +668,13 @@ components:
         id:
           type: string
           example: ITEM-101
+        item_id:
+          type: string
+          example: ITEM-101
         name:
+          type: string
+          example: Kertas HVS A4 80gr Sinar Dunia
+        item_name:
           type: string
           example: Kertas HVS A4 80gr Sinar Dunia
         quantity:
@@ -457,6 +687,15 @@ components:
         qty_received:
           type: integer
           example: 50
+        received:
+          type: integer
+          example: 50
+        remaining:
+          type: integer
+          example: 50
+        unit:
+          type: string
+          example: Unit
 
     CreatePurchaseOrderRequest:
       type: object
@@ -523,7 +762,17 @@ components:
         proof:
           type: string
           minLength: 1
-          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample.pdf
+          description: URL atau nama file bukti transfer pembayaran
+          example: https://br-steep-truth-aoy56eud.storage.c-2.ap-southeast-1.aws.neon.tech/payment-proofs/sample-receipt.pdf
+        bank:
+          type: string
+          description: Nama bank tujuan pembayaran
+          example: Bank Mandiri (1310-0982-4412 a.n. Vendor)
+        paid_at:
+          type: string
+          format: date
+          description: Tanggal pembayaran dilakukan (maksimal hari ini, tidak boleh sebelum PO)
+          example: '2026-11-13'
 
     CreateGoodsReceiptRequest:
       type: object
@@ -534,20 +783,26 @@ components:
           example: PO-2026-001
         receipt_no:
           type: string
+          maxLength: 20
+          description: Nomor Surat Jalan dari vendor (maksimal 20 karakter)
           example: SJ-2026/X/9812
         received_date:
           type: string
           format: date
-          example: '2026-11-09'
+          description: Tanggal fisik barang tiba (maksimal hari ini, tidak boleh sebelum tanggal PO)
+          example: '2026-11-12'
         receiver:
           type: string
-          example: Petugas Gudang
+          description: Nama staf/petugas pemeriksa gudang
+          example: Tyezar Hasan (Staff Gudang)
         notes:
           type: string
-          example: Barang diterima dalam kondisi baik
+          description: Catatan hasil inspeksi kondisi barang (sanitasi XSS aktif)
+          example: Barang diterima dalam kondisi baik dan tersegel utuh
         items:
           type: array
           minItems: 1
+          description: Rincian barang fisik yang diterima pada sesi ini
           items:
             type: object
             required: [item_id, qty_received]
@@ -558,11 +813,15 @@ components:
               qty_received:
                 type: integer
                 minimum: 1
+                description: Kuantitas barang fisik (wajib bilangan bulat integer non-negatif)
                 example: 50
 
     GoodsReceipt:
       type: object
       properties:
+        id:
+          type: string
+          example: SJ-2026/X/9812
         receipt_no:
           type: string
           example: SJ-2026/X/9812
@@ -572,9 +831,10 @@ components:
         received_date:
           type: string
           format: date-time
+          example: '2026-11-12T10:15:00Z'
         receiver:
           type: string
-          example: Petugas Gudang
+          example: Tyezar Hasan
         notes:
           type: string
           example: Barang diterima dalam kondisi baik
@@ -588,7 +848,7 @@ components:
       properties:
         id:
           type: string
-          example: GRN-ITEM-001
+          example: 1e9d2f23-8cfb-4a37-b64d-773a9ec1a91e
         receipt_no:
           type: string
           example: SJ-2026/X/9812
@@ -602,21 +862,42 @@ components:
     GoodsReceiptResponse:
       type: object
       properties:
+        id:
+          type: string
+          example: SJ-2026/X/9812
+        nomor_grn:
+          type: string
+          example: SJ-2026/X/9812
         receipt_no:
+          type: string
+          example: SJ-2026/X/9812
+        nomor_surat_jalan:
           type: string
           example: SJ-2026/X/9812
         purchase_order_id:
           type: string
           example: PO-2026-001
+        po_id:
+          type: string
+          example: PO-2026-001
         received_date:
           type: string
-          example: '2026-11-09'
+          example: '2026-11-12'
+        tanggal_penerimaan:
+          type: string
+          example: '2026-11-12'
         receiver:
           type: string
-          example: Petugas Gudang
+          example: Tyezar Hasan
+        penerima:
+          type: string
+          example: Tyezar Hasan
         notes:
           type: string
-          example: Barang diterima dalam kondisi baik
+          example: Barang dalam kondisi baik
+        catatan:
+          type: string
+          example: Barang dalam kondisi baik
         items:
           type: array
           items:
@@ -627,10 +908,19 @@ components:
                 example: ITEM-101
               item_name:
                 type: string
-                example: Kertas HVS A4
+                example: Kertas HVS A4 80gr Sinar Dunia
               qty_received:
                 type: integer
                 example: 50
+              qty_masuk:
+                type: integer
+                example: 50
+              unit:
+                type: string
+                example: Unit
+              satuan:
+                type: string
+                example: Unit
 
     GoodsReceiptHistory:
       type: object
@@ -654,10 +944,10 @@ components:
         received_date:
           type: string
           format: date
-          example: '2026-11-09'
+          example: '2026-11-12'
         receiver:
           type: string
-          example: Petugas Gudang
+          example: Tyezar Hasan
         notes:
           type: string
           example: Barang diterima dalam kondisi baik
@@ -682,14 +972,55 @@ components:
       properties:
         id:
           type: string
-          example: PO-2026-001
+          example: PO-2026-003
         supplier:
           type: string
-          example: PT Graha Sarana Mitra
+          example: PT Pasundan Mega Elektrik
+        supplier_name:
+          type: string
+          example: PT Pasundan Mega Elektrik
+        status:
+          type: string
+          example: received
+        payment:
+          type: string
+          example: unpaid
         total:
           type: integer
           format: int64
-          example: 6500000
+          example: 26750000
+        total_tagihan:
+          type: integer
+          format: int64
+          example: 26750000
+        order_date:
+          type: string
+          format: date-time
+          example: '2026-11-10T09:30:00Z'
+        received_at:
+          type: string
+          format: date-time
+          example: '2026-11-12T11:00:00Z'
+
+    ValidationError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: PO_NOT_FULLY_RECEIVED
+            message:
+              type: string
+              example: Pelunasan tagihan hanya dapat diproses setelah seluruh barang pesanan 100% lengkap diterima di gudang.
+            fields:
+              type: object
+              additionalProperties:
+                type: string
 
     Error:
       type: object
@@ -706,11 +1037,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     ValidationError:
-      description: Input tidak lolos validasi
+      description: Input tidak lolos validasi bisnis
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: '#/components/schemas/ValidationError'
     Conflict:
       description: Konflik status atau data
       content:
