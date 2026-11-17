@@ -30,6 +30,10 @@ func (s *PurchaseOrderService) List() ([]model.PurchaseOrder, error) {
 	return s.repo.List()
 }
 
+func (s *PurchaseOrderService) ListFiltered(status, date, from, to, q string) ([]model.PurchaseOrder, error) {
+	return s.repo.ListFiltered(status, date, from, to, q)
+}
+
 func (s *PurchaseOrderService) Approved() ([]model.PurchaseOrder, error) {
 	return s.repo.Approved()
 }
@@ -58,12 +62,12 @@ func (s *PurchaseOrderService) CreateGoodsReceipt(req *dto.CreateGoodsReceiptReq
 	return receipt, err
 }
 
-func (s *PurchaseOrderService) ListGoodsReceipts(poID string) ([]model.GoodsReceipt, error) {
-	return s.repo.ListGoodsReceipts(poID)
+func (s *PurchaseOrderService) ListGoodsReceipts(poID string, filters ...string) ([]model.GoodsReceipt, error) {
+	return s.repo.ListGoodsReceipts(poID, filters...)
 }
 
-func (s *PurchaseOrderService) Pay(id, proof string) (*model.PurchaseOrder, error) {
-	return s.repo.Pay(id, proof)
+func (s *PurchaseOrderService) Pay(id, proof string, paidAt time.Time, bank string) (*model.PurchaseOrder, error) {
+	return s.repo.Pay(id, proof, paidAt, bank)
 }
 
 func (s *PurchaseOrderService) Unpaid() ([]repository.UnpaidRow, int64, error) {

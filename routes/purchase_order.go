@@ -13,6 +13,7 @@ func RegisterPurchaseOrderRoutes(route *http.ServeMux, service *application.Purc
 	}
 	handler := controller.NewPurchaseOrderController(service)
 	receiptHandler := controller.NewGoodsReceiptController(service)
+
 	route.HandleFunc("GET /purchase-orders", handler.List)
 	route.HandleFunc("POST /purchase-orders", handler.Create)
 	route.HandleFunc("GET /purchase-orders/approved", handler.Approved)
@@ -21,7 +22,14 @@ func RegisterPurchaseOrderRoutes(route *http.ServeMux, service *application.Purc
 	route.HandleFunc("GET /purchase-orders/{id}/receipts", handler.ReceiptHistory)
 	route.HandleFunc("POST /purchase-orders/{id}/receipts", handler.Receive)
 	route.HandleFunc("POST /purchase-orders/{id}/payment", handler.Pay)
+	route.HandleFunc("GET /purchase-orders/{id}/proof", handler.Proof)
+	route.HandleFunc("GET /storage/payment-proofs/{filename}", handler.StorageFile)
+
 	route.HandleFunc("GET /reports/procurement", handler.Report)
+
+	// Goods Receipts endpoints
 	route.HandleFunc("POST /goods-receipts", receiptHandler.Create)
 	route.HandleFunc("GET /goods-receipts", receiptHandler.List)
+	route.HandleFunc("POST /goods-receipt", receiptHandler.Create)
+	route.HandleFunc("GET /goods-receipt", receiptHandler.List)
 }

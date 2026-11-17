@@ -2,7 +2,9 @@ package controller
 
 import (
 	"errors"
+	"html"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +14,14 @@ import (
 	"m11/dto"
 	"m11/resource"
 )
+
+var reScriptTag = regexp.MustCompile(`(?i)<script[\s\S]*?>[\s\S]*?</script>|<script[\s\S]*?>`)
+
+func sanitizeInput(s string) string {
+	cleaned := reScriptTag.ReplaceAllString(s, "")
+	cleaned = html.EscapeString(strings.TrimSpace(cleaned))
+	return cleaned
+}
 
 type GoodsReceiptController struct {
 	service *application.PurchaseOrderService
@@ -36,6 +46,16 @@ func (c *GoodsReceiptController) Create(w http.ResponseWriter, r *http.Request) 
 		})
 		return
 	}
+
+	// B07: Pembatasan nomor surat jalan maksimal 20 karakter
+	rawReceiptNo := strings.TrimSpace(req.ReceiptNo)
+	if len([]rune(rawReceiptNo)) > 20 {
+		validationErrorJSON(w, "INVALID_RECEIPT_NO", "nomor surat jalan maksimal 20 karakter", map[string]string{
+			"receipt_no": "nomor surat jalan maksimal 20 karakter",
+		})
+		return
+	}
+
 	receivedDate, err := time.Parse("2006-01-02", req.ReceivedDate)
 	if err != nil {
 		validationErrorJSON(w, "INVALID_DATE", "received_date harus menggunakan format YYYY-MM-DD", map[string]string{
@@ -43,16 +63,49 @@ func (c *GoodsReceiptController) Create(w http.ResponseWriter, r *http.Request) 
 		})
 		return
 	}
+
+	// Poin 3: Validasi kronologi tanggal penerimaan (tidak boleh masa depan, tidak boleh sebelum PO)
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, time.UTC)
+	if receivedDate.After(today) {
+		validationErrorJSON(w, "INVALID_RECEIPT_DATE", "Tanggal penerimaan tidak boleh lebih awal dari tanggal PO atau melebihi hari ini.", map[string]string{
+			"received_date": "Tanggal penerimaan tidak boleh lebih awal dari tanggal PO atau melebihi hari ini.",
+		})
+		return
+	}
+
+	po, err := c.service.Find(req.PurchaseOrderID)
+	if err != nil || po == nil {
+		errorJSON(w, http.StatusNotFound, "purchase order not found")
+		return
+	}
+	poOrderDate := time.Date(po.CreatedAt.Year(), po.CreatedAt.Month(), po.CreatedAt.Day(), 0, 0, 0, 0, time.UTC)
+	if receivedDate.Before(poOrderDate) {
+		validationErrorJSON(w, "INVALID_RECEIPT_DATE", "Tanggal penerimaan tidak boleh lebih awal dari tanggal PO atau melebihi hari ini.", map[string]string{
+			"received_date": "Tanggal penerimaan tidak boleh lebih awal dari tanggal PO atau melebihi hari ini.",
+		})
+		return
+	}
+
+	// Poin 4 (B08): Validasi kuantitas bulat integer positif > 0 dan keunikan item
 	seen := make(map[string]bool, len(req.Items))
 	for _, item := range req.Items {
-		if strings.TrimSpace(item.ItemID) == "" || item.QtyReceived <= 0 || seen[item.ItemID] {
-			validationErrorJSON(w, "INVALID_ITEMS", "item_id wajib unik dan qty_received harus lebih besar dari 0", map[string]string{
-				"items": "item_id wajib unik dan qty_received harus lebih besar dari 0",
+		qty := item.QtyReceived.Int()
+		if strings.TrimSpace(item.ItemID) == "" || qty <= 0 || seen[item.ItemID] {
+			validationErrorJSON(w, "INVALID_INTEGER_QTY", "Kuantitas penerimaan barang harus berupa bilangan bulat positif.", map[string]string{
+				"items":        "Kuantitas penerimaan barang harus berupa bilangan bulat positif.",
+				"qty_received": "Kuantitas penerimaan barang harus berupa bilangan bulat positif.",
 			})
 			return
 		}
 		seen[item.ItemID] = true
 	}
+
+	// F05: Sanitasi XSS pada catatan dan identitas penerima
+	req.ReceiptNo = sanitizeInput(req.ReceiptNo)
+	req.Receiver = sanitizeInput(req.Receiver)
+	req.Notes = sanitizeInput(req.Notes)
+
 	receipt, err := c.service.CreateGoodsReceipt(&req, receivedDate)
 	if err != nil {
 		helper.LogTransaction("ERROR", "GOODS_RECEIPT", "create failed receipt_no=%s: %v", req.ReceiptNo, err)
@@ -77,7 +130,15 @@ func (c *GoodsReceiptController) List(w http.ResponseWriter, r *http.Request) {
 	if poID == "" {
 		poID = strings.TrimSpace(r.URL.Query().Get("po"))
 	}
-	receipts, err := c.service.ListGoodsReceipts(poID)
+	date := strings.TrimSpace(r.URL.Query().Get("date"))
+	from := strings.TrimSpace(r.URL.Query().Get("from"))
+	to := strings.TrimSpace(r.URL.Query().Get("to"))
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		q = strings.TrimSpace(r.URL.Query().Get("search"))
+	}
+
+	receipts, err := c.service.ListGoodsReceipts(poID, date, from, to, q)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			errorJSON(w, http.StatusNotFound, "purchase order not found")
@@ -90,5 +151,8 @@ func (c *GoodsReceiptController) List(w http.ResponseWriter, r *http.Request) {
 	for _, receipt := range receipts {
 		result = append(result, resource.NewGoodsReceiptResponse(receipt))
 	}
-	jsonResponse(w, http.StatusOK, result)
+	// Poin 5: Mengembalikan data object berisi goods_receipts
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"goods_receipts": result,
+	})
 }

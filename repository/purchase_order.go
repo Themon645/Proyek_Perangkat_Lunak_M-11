@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"m11/common"
@@ -43,9 +44,44 @@ func (r *PurchaseOrderRepository) List() ([]model.PurchaseOrder, error) {
 	return orders, nil
 }
 
+func (r *PurchaseOrderRepository) ListFiltered(status, date, from, to, q string) ([]model.PurchaseOrder, error) {
+	var orders []model.PurchaseOrder
+	query := r.db.Preload("Items").Preload("Payments")
+
+	if status != "" && status != "semua" {
+		query = query.Where("status = ?", status)
+	}
+	if date != "" {
+		if parsedDate, err := time.Parse("2006-01-02", date); err == nil {
+			query = query.Where("created_at >= ? AND created_at < ?", parsedDate, parsedDate.Add(24*time.Hour))
+		}
+	}
+	if from != "" {
+		if parsedFrom, err := time.Parse("2006-01-02", from); err == nil {
+			query = query.Where("created_at >= ?", parsedFrom)
+		}
+	}
+	if to != "" {
+		if parsedTo, err := time.Parse("2006-01-02", to); err == nil {
+			query = query.Where("created_at < ?", parsedTo.Add(24*time.Hour))
+		}
+	}
+	if q != "" {
+		like := "%" + strings.TrimSpace(q) + "%"
+		query = query.Where("id ILIKE ? OR supplier ILIKE ?", like, like)
+	}
+
+	if err := query.Order("created_at ASC").Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	return orders, nil
+}
+
 func (r *PurchaseOrderRepository) Approved() ([]model.PurchaseOrder, error) {
 	var orders []model.PurchaseOrder
-	if err := r.db.Preload("Items").Preload("Payments").Where("status = ?", common.StatusApproved).Order("created_at ASC").Find(&orders).Error; err != nil {
+	if err := r.db.Preload("Items").Preload("Payments").
+		Where("status IN ?", []string{common.StatusApproved, common.StatusReceivedPartial}).
+		Order("created_at ASC").Find(&orders).Error; err != nil {
 		return nil, err
 	}
 	return orders, nil
@@ -59,7 +95,7 @@ func (r *PurchaseOrderRepository) ListByStatus(status string) ([]model.PurchaseO
 	return orders, nil
 }
 
-func (r *PurchaseOrderRepository) ListGoodsReceipts(poID string) ([]model.GoodsReceipt, error) {
+func (r *PurchaseOrderRepository) ListGoodsReceipts(poID string, filters ...string) ([]model.GoodsReceipt, error) {
 	var receipts []model.GoodsReceipt
 	query := r.db.Preload("Items.Item").Preload("PurchaseOrder")
 	if poID != "" {
@@ -69,6 +105,27 @@ func (r *PurchaseOrderRepository) ListGoodsReceipts(poID string) ([]model.GoodsR
 		}
 		query = query.Where("purchase_order_uuid = ?", po.UUID)
 	}
+	// filters optional: [date, from, to, q]
+	if len(filters) > 0 && filters[0] != "" {
+		if parsedDate, err := time.Parse("2006-01-02", filters[0]); err == nil {
+			query = query.Where("received_date >= ? AND received_date < ?", parsedDate, parsedDate.Add(24*time.Hour))
+		}
+	}
+	if len(filters) > 1 && filters[1] != "" {
+		if parsedFrom, err := time.Parse("2006-01-02", filters[1]); err == nil {
+			query = query.Where("received_date >= ?", parsedFrom)
+		}
+	}
+	if len(filters) > 2 && filters[2] != "" {
+		if parsedTo, err := time.Parse("2006-01-02", filters[2]); err == nil {
+			query = query.Where("received_date < ?", parsedTo.Add(24*time.Hour))
+		}
+	}
+	if len(filters) > 3 && filters[3] != "" {
+		like := "%" + strings.TrimSpace(filters[3]) + "%"
+		query = query.Where("receipt_no ILIKE ? OR receiver ILIKE ? OR notes ILIKE ?", like, like, like)
+	}
+
 	if err := query.Order("received_date DESC, created_at DESC").Find(&receipts).Error; err != nil {
 		return nil, err
 	}
@@ -180,16 +237,17 @@ func (r *PurchaseOrderRepository) CreateGoodsReceipt(req *dto.CreateGoodsReceipt
 			if !ok {
 				return errors.New("received quantity exceeds ordered quantity")
 			}
-			if err := validation.ValidatePartialQuantity(orderItem.Quantity, totals[orderItem.UUID], item.QtyReceived); err != nil {
+			qty := item.QtyReceived.Int()
+			if err := validation.ValidatePartialQuantity(orderItem.Quantity, totals[orderItem.UUID], qty); err != nil {
 				return err
 			}
 			if err := tx.Create(&model.GoodsReceiptItem{
-				ReceiptUUID: receipt.UUID, ItemUUID: orderItem.UUID, QtyReceived: item.QtyReceived,
+				ReceiptUUID: receipt.UUID, ItemUUID: orderItem.UUID, QtyReceived: qty,
 			}).Error; err != nil {
 				return err
 			}
 			receipt.Items = append(receipt.Items, model.GoodsReceiptItem{
-				ReceiptUUID: receipt.UUID, ItemUUID: orderItem.UUID, QtyReceived: item.QtyReceived,
+				ReceiptUUID: receipt.UUID, ItemUUID: orderItem.UUID, QtyReceived: qty,
 			})
 		}
 		totals, err = receiptTotals(tx, po.Items)
@@ -211,7 +269,8 @@ func (r *PurchaseOrderRepository) CreateGoodsReceipt(req *dto.CreateGoodsReceipt
 		if complete {
 			status = common.StatusReceived
 		}
-		return tx.Model(&po).Update("status", status).Error
+		now := time.Now().UTC()
+		return tx.Model(&po).Updates(map[string]any{"status": status, "received_at": &now}).Error
 	})
 	if err != nil {
 		return nil, err
@@ -248,19 +307,21 @@ func receiptTotals(tx *gorm.DB, items []model.PurchaseOrderItem) (map[uuid.UUID]
 	return totals, nil
 }
 
-func (r *PurchaseOrderRepository) Pay(id, proof string) (*model.PurchaseOrder, error) {
+func (r *PurchaseOrderRepository) Pay(id, proof string, paidAt time.Time, bank string) (*model.PurchaseOrder, error) {
 	var po model.PurchaseOrder
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Preload("Items").First(&po, "id = ?", id).Error; err != nil {
 			return err
 		}
-		if po.Status != common.StatusReceived && po.Status != common.StatusReceivedPartial {
-			return errors.New("purchase order must be received before payment")
+		// Poin 1: Wajib 100% barang diterima sebelum pelunasan
+		if po.Status != common.StatusReceived {
+			return errors.New("PO_NOT_FULLY_RECEIVED: Pelunasan tagihan hanya dapat diproses setelah seluruh barang pesanan 100% lengkap diterima di gudang.")
 		}
 		var amount int64
 		for _, item := range po.Items {
 			amount += int64(item.Received) * item.UnitCost
 		}
+
 		result := tx.Model(&po).
 			Where("payment = ?", common.PaymentUnpaid).
 			Updates(map[string]any{"payment": common.PaymentPaid, "proof": proof})
@@ -270,11 +331,20 @@ func (r *PurchaseOrderRepository) Pay(id, proof string) (*model.PurchaseOrder, e
 		if result.RowsAffected == 0 {
 			return errors.New("purchase order sudah dibayar")
 		}
+
+		if paidAt.IsZero() {
+			paidAt = time.Now().UTC()
+		}
+		if bank == "" {
+			bank = "Bank Mandiri (1310-0982-4412 a.n. Vendor)"
+		}
+
 		if err := tx.Create(&model.PaymentRecord{
 			PurchaseOrderUUID: po.UUID,
 			Amount:            amount,
-			PaidAt:            time.Now().UTC(),
+			PaidAt:            paidAt,
 			ProofPath:         proof,
+			Bank:              bank,
 		}).Error; err != nil {
 			return err
 		}
@@ -283,8 +353,7 @@ func (r *PurchaseOrderRepository) Pay(id, proof string) (*model.PurchaseOrder, e
 	if err != nil {
 		return nil, err
 	}
-	po.Payment, po.Proof = common.PaymentPaid, proof
-	return &po, nil
+	return r.Find(id)
 }
 
 type UnpaidRow struct {
@@ -296,7 +365,7 @@ type UnpaidRow struct {
 func (r *PurchaseOrderRepository) Unpaid() ([]UnpaidRow, int64, error) {
 	var orders []model.PurchaseOrder
 	if err := r.db.Preload("Items").
-		Where("payment = ? AND status IN ?", common.PaymentUnpaid, []string{common.StatusReceived, common.StatusReceivedPartial}).
+		Where("payment = ? AND status = ?", common.PaymentUnpaid, common.StatusReceived).
 		Find(&orders).Error; err != nil {
 		return nil, 0, err
 	}

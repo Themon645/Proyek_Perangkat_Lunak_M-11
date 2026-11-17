@@ -28,14 +28,16 @@ func NewPurchaseOrderController(service *application.PurchaseOrderService) *Purc
 }
 
 func (c *PurchaseOrderController) List(w http.ResponseWriter, r *http.Request) {
-	status := r.URL.Query().Get("status")
-	var orders []model.PurchaseOrder
-	var err error
-	if status != "" {
-		orders, err = c.service.ListByStatus(status)
-	} else {
-		orders, err = c.service.List()
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	date := strings.TrimSpace(r.URL.Query().Get("date"))
+	from := strings.TrimSpace(r.URL.Query().Get("from"))
+	to := strings.TrimSpace(r.URL.Query().Get("to"))
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		q = strings.TrimSpace(r.URL.Query().Get("search"))
 	}
+
+	orders, err := c.service.ListFiltered(status, date, from, to, q)
 	if err != nil {
 		errorJSON(w, http.StatusInternalServerError, err.Error())
 		return
@@ -144,8 +146,27 @@ func (c *PurchaseOrderController) Receive(w http.ResponseWriter, r *http.Request
 
 func (c *PurchaseOrderController) Pay(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	// Pastikan PO ada sebelum memproses bukti bayar
+	poExisting, err := c.service.Find(id)
+	if err != nil || poExisting == nil {
+		errorJSON(w, http.StatusNotFound, "purchase order not found")
+		return
+	}
+
+	// Poin 1: Pelunasan hanya dapat diproses setelah seluruh barang pesanan 100% lengkap diterima di gudang (status: received)
+	if poExisting.Status != common.StatusReceived {
+		writeErrorJSON(w, http.StatusUnprocessableEntity, "PO_NOT_FULLY_RECEIVED", "Pelunasan tagihan hanya dapat diproses setelah seluruh barang pesanan 100% lengkap diterima di gudang.", map[string]string{
+			"status": "Pelunasan tagihan hanya dapat diproses setelah seluruh barang pesanan 100% lengkap diterima di gudang.",
+		})
+		return
+	}
+
 	var proofPath string
 	var uploaded bool
+	var paidAtStr string
+	var bank string
+
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 		if err := r.ParseMultipartForm(helper.MaxPaymentProofSize + (1 << 20)); err != nil {
 			paymentProofError(w, "format multipart/form-data tidak valid")
@@ -163,14 +184,71 @@ func (c *PurchaseOrderController) Pay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		uploaded = true
+
+		paidAtStr = r.FormValue("paid_at")
+		if paidAtStr == "" {
+			paidAtStr = r.FormValue("payment_date")
+		}
+		if paidAtStr == "" {
+			paidAtStr = r.FormValue("date")
+		}
+		bank = r.FormValue("bank")
+		if bank == "" {
+			bank = r.FormValue("bank_tujuan")
+		}
 	} else {
 		var req dto.PayPurchaseOrderRequest
 		if !decodeJSON(w, r, &req) || strings.TrimSpace(req.Proof) == "" {
 			return
 		}
 		proofPath = req.Proof
+		paidAtStr = req.PaidAt
+		if paidAtStr == "" {
+			paidAtStr = req.PaymentDate
+		}
+		bank = req.Bank
+		if bank == "" {
+			bank = req.BankTujuan
+		}
 	}
-	po, err := c.service.Pay(id, proofPath)
+
+	// D08: Validasi tanggal pelunasan (tidak boleh masa depan, tidak boleh sebelum PO)
+	paidTime := time.Now().UTC()
+	if strings.TrimSpace(paidAtStr) != "" {
+		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(paidAtStr))
+		if err != nil {
+			parsed, err = time.Parse(time.RFC3339, strings.TrimSpace(paidAtStr))
+		}
+		if err != nil {
+			if uploaded {
+				helper.DeletePaymentProof(proofPath)
+			}
+			paymentProofError(w, "format tanggal pembayaran harus YYYY-MM-DD")
+			return
+		}
+		paidTime = parsed
+	}
+
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, time.UTC)
+	poOrderDate := time.Date(poExisting.CreatedAt.Year(), poExisting.CreatedAt.Month(), poExisting.CreatedAt.Day(), 0, 0, 0, 0, time.UTC)
+
+	// Poin 3: Validasi tanggal pembayaran
+	if paidTime.After(today) || paidTime.Before(poOrderDate) {
+		if uploaded {
+			helper.DeletePaymentProof(proofPath)
+		}
+		writeErrorJSON(w, http.StatusBadRequest, "INVALID_PAYMENT_DATE", "Tanggal pembayaran tidak boleh melebihi hari ini atau lebih awal dari tanggal PO.", map[string]string{
+			"paid_at": "Tanggal pembayaran tidak boleh melebihi hari ini atau lebih awal dari tanggal PO.",
+		})
+		return
+	}
+
+	if bank == "" {
+		bank = "Bank Mandiri (1310-0982-4412 a.n. Vendor)"
+	}
+
+	po, err := c.service.Pay(id, proofPath, paidTime, bank)
 	if err != nil {
 		if uploaded {
 			helper.DeletePaymentProof(proofPath)
@@ -181,6 +259,35 @@ func (c *PurchaseOrderController) Pay(w http.ResponseWriter, r *http.Request) {
 	}
 	helper.LogTransaction("UPDATE", "PAYMENT", "paid purchase_order_id=%s", id)
 	jsonResponse(w, http.StatusOK, resource.NewPurchaseOrder(*po))
+}
+
+func (c *PurchaseOrderController) Proof(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	po, err := c.service.Find(id)
+	if err != nil || po == nil {
+		errorJSON(w, http.StatusNotFound, "purchase order not found")
+		return
+	}
+	proof := strings.TrimSpace(po.Proof)
+	if proof == "" && len(po.Payments) > 0 {
+		proof = strings.TrimSpace(po.Payments[len(po.Payments)-1].ProofPath)
+	}
+	if proof == "" {
+		errorJSON(w, http.StatusNotFound, "bukti pembayaran belum tersedia")
+		return
+	}
+	_, _, cloudURL := helper.ResolveProofURLs(proof)
+	http.Redirect(w, r, cloudURL, http.StatusFound)
+}
+
+func (c *PurchaseOrderController) StorageFile(w http.ResponseWriter, r *http.Request) {
+	filename := r.PathValue("filename")
+	if strings.TrimSpace(filename) == "" {
+		errorJSON(w, http.StatusNotFound, "file not found")
+		return
+	}
+	_, _, cloudURL := helper.ResolveProofURLs(filename)
+	http.Redirect(w, r, cloudURL, http.StatusFound)
 }
 
 func paymentProofError(w http.ResponseWriter, message string) {
@@ -229,11 +336,18 @@ func (c *PurchaseOrderController) repositoryError(w http.ResponseWriter, err err
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, value any) bool {
-	if r.Header.Get("Content-Type") != "application/json" {
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		errorJSON(w, http.StatusUnsupportedMediaType, "content type must be application/json")
 		return false
 	}
 	if err := json.NewDecoder(r.Body).Decode(value); err != nil {
+		if strings.Contains(err.Error(), "tidak boleh desimal") {
+			validationErrorJSON(w, "INVALID_INTEGER_QTY", "Kuantitas penerimaan barang harus berupa bilangan bulat positif.", map[string]string{
+				"items":        "Kuantitas penerimaan barang harus berupa bilangan bulat positif.",
+				"qty_received": "Kuantitas penerimaan barang harus berupa bilangan bulat positif.",
+			})
+			return false
+		}
 		errorJSON(w, http.StatusBadRequest, "invalid JSON")
 		return false
 	}

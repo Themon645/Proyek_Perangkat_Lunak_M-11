@@ -24,5 +24,10 @@ type ReceiveItem struct {
 }
 
 type PayPurchaseOrderRequest struct {
-	Proof string `json:"proof"`
+	Proof       string `json:"proof"`
+	PaidAt      string `json:"paid_at,omitempty"`
+	PaymentDate string `json:"payment_date,omitempty"`
+	Bank        string `json:"bank,omitempty"`
+	BankTujuan  string `json:"bank_tujuan,omitempty"`
+	Notes       string `json:"notes,omitempty"`
 }

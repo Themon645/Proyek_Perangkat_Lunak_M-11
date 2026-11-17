@@ -16,6 +16,7 @@ type PaymentRecord struct {
 	Amount            int64         `json:"amount" gorm:"not null"`
 	PaidAt            time.Time     `json:"paid_at" gorm:"not null"`
 	ProofPath         string        `json:"proof_path" gorm:"not null"`
+	Bank              string        `json:"bank,omitempty"`
 	PurchaseOrder     PurchaseOrder `json:"-" gorm:"foreignKey:PurchaseOrderUUID;references:UUID"`
 	helper.AuditFields
 }
