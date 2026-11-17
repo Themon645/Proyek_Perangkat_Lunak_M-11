@@ -353,4 +353,25 @@ func TestPOStatusVariety(t *testing.T) {
 	if statusCounts[common.StatusPending] != 1 {
 		t.Fatalf("expected 1 pending (diajukan), got %d", statusCounts[common.StatusPending])
 	}
+
+	// Test filter selain disetujui (?status=selain-disetujui atau ?exclude_status=approved)
+	for _, queryParam := range []string{"?status=selain-disetujui", "?exclude_status=approved", "?status=!approved"} {
+		reqFilter := httptest.NewRequest("GET", "/purchase-orders"+queryParam, nil)
+		wFilter := httptest.NewRecorder()
+		handler.ServeHTTP(wFilter, reqFilter)
+
+		if wFilter.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d", queryParam, wFilter.Code)
+		}
+		var nonApprovedList []map[string]any
+		_ = json.Unmarshal(wFilter.Body.Bytes(), &nonApprovedList)
+		if len(nonApprovedList) != 6 {
+			t.Fatalf("expected 6 non-approved POs for %s, got %d", queryParam, len(nonApprovedList))
+		}
+		for _, item := range nonApprovedList {
+			if item["status"] == common.StatusApproved {
+				t.Fatalf("expected no approved status in non-approved filter for %s", queryParam)
+			}
+		}
+	}
 }

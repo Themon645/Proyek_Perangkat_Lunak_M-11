@@ -29,6 +29,13 @@ func NewPurchaseOrderController(service *application.PurchaseOrderService) *Purc
 
 func (c *PurchaseOrderController) List(w http.ResponseWriter, r *http.Request) {
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	excludeStatus := strings.TrimSpace(r.URL.Query().Get("exclude_status"))
+	if excludeStatus == "" {
+		excludeStatus = strings.TrimSpace(r.URL.Query().Get("not_status"))
+	}
+	if status == "" && excludeStatus != "" {
+		status = "!" + excludeStatus
+	}
 	date := strings.TrimSpace(r.URL.Query().Get("date"))
 	from := strings.TrimSpace(r.URL.Query().Get("from"))
 	to := strings.TrimSpace(r.URL.Query().Get("to"))

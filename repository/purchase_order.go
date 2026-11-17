@@ -49,7 +49,13 @@ func (r *PurchaseOrderRepository) ListFiltered(status, date, from, to, q string)
 	query := r.db.Preload("Items").Preload("Payments")
 
 	if status != "" && status != "semua" {
-		query = query.Where("status = ?", status)
+		if strings.HasPrefix(status, "!") {
+			query = query.Where("status != ?", strings.TrimPrefix(status, "!"))
+		} else if strings.EqualFold(status, "non-approved") || strings.EqualFold(status, "selain-disetujui") || strings.EqualFold(status, "other") {
+			query = query.Where("status != ?", common.StatusApproved)
+		} else {
+			query = query.Where("status = ?", status)
+		}
 	}
 	if date != "" {
 		if parsedDate, err := time.Parse("2006-01-02", date); err == nil {
