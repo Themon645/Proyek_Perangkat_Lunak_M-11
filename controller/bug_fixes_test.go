@@ -375,3 +375,44 @@ func TestPOStatusVariety(t *testing.T) {
 		}
 	}
 }
+
+// Test multi-item seeder (1 PO memiliki lebih dari 1 barang)
+func TestPOMultiItemSeeder(t *testing.T) {
+	handler, _ := setupTestApp(t)
+
+	// Check PO-2026-001 (has 3 items)
+	req := httptest.NewRequest("GET", "/purchase-orders/PO-2026-001", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var po map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &po)
+	items, ok := po["items"].([]any)
+	if !ok || len(items) < 2 {
+		t.Fatalf("expected PO-2026-001 to have more than 1 item, got %d", len(items))
+	}
+	if len(items) != 3 {
+		t.Fatalf("expected PO-2026-001 to have 3 items, got %d", len(items))
+	}
+
+	// Check PO-2026-007 (has 2 items with partial receipt)
+	req2 := httptest.NewRequest("GET", "/purchase-orders/PO-2026-007", nil)
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	var po7 map[string]any
+	_ = json.Unmarshal(w2.Body.Bytes(), &po7)
+	items7, ok := po7["items"].([]any)
+	if !ok || len(items7) != 2 {
+		t.Fatalf("expected PO-2026-007 to have 2 items, got %d", len(items7))
+	}
+}
+
