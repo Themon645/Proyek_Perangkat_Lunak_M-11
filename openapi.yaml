@@ -84,8 +84,8 @@ paths:
       tags: [System]
       summary: Reset & seed PostgreSQL (Neon Cloud)
       description: >
-        Membersihkan seluruh data tabel transaksi pengadaan dan menginisialisasi 10 Purchase Order multi-item (21 items),
-        5 dokumen GRN (10 item masuk), dan 3 bukti pelunasan dengan variasi status realistis.
+        Membersihkan seluruh data tabel transaksi pengadaan dan menginisialisasi 20 Purchase Order multi-item (41 items),
+        10 dokumen GRN (20 item masuk), dan 5 bukti pelunasan dengan variasi status realistis.
       responses:
         '200':
           description: Database berhasil direset dan diisi data seeder baru
@@ -99,7 +99,7 @@ paths:
                     example: true
                   message:
                     type: string
-                    example: PostgreSQL (Neon) berhasil dibersihkan dan diisi 10 purchase orders multi-item & goods receipts
+                    example: PostgreSQL (Neon) berhasil dibersihkan dan diisi 20 purchase orders multi-item & goods receipts
         '500':
           $ref: '#/components/responses/ServerError'
 

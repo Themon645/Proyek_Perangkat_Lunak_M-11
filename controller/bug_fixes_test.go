@@ -332,8 +332,8 @@ func TestPOStatusVariety(t *testing.T) {
 
 	var list []map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &list)
-	if len(list) != 10 {
-		t.Fatalf("expected exactly 10 POs, got %d", len(list))
+	if len(list) != 20 {
+		t.Fatalf("expected exactly 20 POs, got %d", len(list))
 	}
 
 	statusCounts := map[string]int{}
@@ -341,17 +341,17 @@ func TestPOStatusVariety(t *testing.T) {
 		statusCounts[po["status"].(string)]++
 	}
 
-	if statusCounts[common.StatusApproved] != 4 {
-		t.Fatalf("expected 4 approved, got %d", statusCounts[common.StatusApproved])
+	if statusCounts[common.StatusApproved] != 7 {
+		t.Fatalf("expected 7 approved, got %d", statusCounts[common.StatusApproved])
 	}
-	if statusCounts[common.StatusReceived] != 4 {
-		t.Fatalf("expected 4 received, got %d", statusCounts[common.StatusReceived])
+	if statusCounts[common.StatusReceived] != 7 {
+		t.Fatalf("expected 7 received, got %d", statusCounts[common.StatusReceived])
 	}
-	if statusCounts[common.StatusReceivedPartial] != 1 {
-		t.Fatalf("expected 1 received partial, got %d", statusCounts[common.StatusReceivedPartial])
+	if statusCounts[common.StatusReceivedPartial] != 3 {
+		t.Fatalf("expected 3 received partial, got %d", statusCounts[common.StatusReceivedPartial])
 	}
-	if statusCounts[common.StatusPending] != 1 {
-		t.Fatalf("expected 1 pending (diajukan), got %d", statusCounts[common.StatusPending])
+	if statusCounts[common.StatusPending] != 3 {
+		t.Fatalf("expected 3 pending (diajukan), got %d", statusCounts[common.StatusPending])
 	}
 
 	// Test filter selain disetujui (?status=selain-disetujui atau ?exclude_status=approved)
@@ -365,8 +365,8 @@ func TestPOStatusVariety(t *testing.T) {
 		}
 		var nonApprovedList []map[string]any
 		_ = json.Unmarshal(wFilter.Body.Bytes(), &nonApprovedList)
-		if len(nonApprovedList) != 6 {
-			t.Fatalf("expected 6 non-approved POs for %s, got %d", queryParam, len(nonApprovedList))
+		if len(nonApprovedList) != 13 {
+			t.Fatalf("expected 13 non-approved POs for %s, got %d", queryParam, len(nonApprovedList))
 		}
 		for _, item := range nonApprovedList {
 			if item["status"] == common.StatusApproved {

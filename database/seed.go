@@ -204,6 +204,166 @@ func SeedDummy(db *gorm.DB) error {
 				paidDateStr:     "",
 				bank:            "",
 			},
+			// 11. PO-2026-011: Disetujui (Approved) - Siap dicatat GRN (Multi-Item: 2 barang)
+			{
+				supplier: "PT Telkom Akses Mitra",
+				items: []itemSeed{
+					{id: "ITEM-111", name: "Router Cisco RV340 Dual WAN Gigabit", qty: 4, receivedQty: 0, unitCost: 3850000},
+					{id: "ITEM-111-B", name: "Patch Cord Fiber Optic SC-LC 5m", qty: 20, receivedQty: 0, unitCost: 85000},
+				},
+				receiptNo:       "",
+				status:          common.StatusApproved,
+				payment:         common.PaymentUnpaid,
+				hasReceipt:      false,
+				orderDateStr:    "2026-11-11 08:30:00",
+				receivedDateStr: "",
+				paidDateStr:     "",
+				bank:            "",
+			},
+			// 12. PO-2026-012: Selesai & Lunas (Received & Paid) (Multi-Item: 2 barang)
+			{
+				supplier: "CV Sukses Berkah Abadi",
+				items: []itemSeed{
+					{id: "ITEM-112", name: "UPS APC Back-UPS Pro 1500VA BR1500GI", qty: 5, receivedQty: 5, unitCost: 4750000},
+					{id: "ITEM-112-B", name: "Terminal Power Anti-Surge 6 Lubang", qty: 15, receivedQty: 15, unitCost: 225000},
+				},
+				receiptNo:       "SJ-2026/XI/1041",
+				status:          common.StatusReceived,
+				payment:         common.PaymentPaid,
+				hasReceipt:      true,
+				orderDateStr:    "2026-11-11 09:15:00",
+				receivedDateStr: "2026-11-13 10:00:00",
+				paidDateStr:     "2026-11-14 11:30:00",
+				bank:            "Bank BCA (7310-8891-22 a.n. Vendor)",
+			},
+			// 13. PO-2026-013: Diterima Sebagian (Received Partial & Unpaid) (Multi-Item: 2 barang)
+			{
+				supplier: "CV Mandiri Bangun Perkasa",
+				items: []itemSeed{
+					{id: "ITEM-113", name: "Cat Tembok Interior Dulux Pail 20 Liter", qty: 10, receivedQty: 5, unitCost: 1450000},
+					{id: "ITEM-113-B", name: "Kuas Roll Cat Tembok Ace Oldfields Set", qty: 20, receivedQty: 10, unitCost: 65000},
+				},
+				receiptNo:       "SJ-2026/XI/1042",
+				status:          common.StatusReceivedPartial,
+				payment:         common.PaymentUnpaid,
+				hasReceipt:      true,
+				orderDateStr:    "2026-11-11 10:00:00",
+				receivedDateStr: "2026-11-13 13:45:00",
+				paidDateStr:     "",
+				bank:            "",
+			},
+			// 14. PO-2026-014: Disetujui (Approved) - Siap dicatat GRN (Multi-Item: 2 barang)
+			{
+				supplier: "PT Graha Mediatama Sentosa",
+				items: []itemSeed{
+					{id: "ITEM-114", name: "Proyektor Epson EB-X500 3600 Lumens", qty: 6, receivedQty: 0, unitCost: 6200000},
+					{id: "ITEM-114-B", name: "Tripod Screen Projector 84x84 inch", qty: 6, receivedQty: 0, unitCost: 950000},
+				},
+				receiptNo:       "",
+				status:          common.StatusApproved,
+				payment:         common.PaymentUnpaid,
+				hasReceipt:      false,
+				orderDateStr:    "2026-11-11 11:00:00",
+				receivedDateStr: "",
+				paidDateStr:     "",
+				bank:            "",
+			},
+			// 15. PO-2026-015: Selesai & Lunas (Received & Paid) (Multi-Item: 2 barang)
+			{
+				supplier: "PT Mitra Sarana Komputindo",
+				items: []itemSeed{
+					{id: "ITEM-115", name: "Keyboard & Mouse Wireless Logitech MK270", qty: 30, receivedQty: 30, unitCost: 385000},
+					{id: "ITEM-115-B", name: "Mousepad Ergonomis Gel Wrist Rest", qty: 30, receivedQty: 30, unitCost: 45000},
+				},
+				receiptNo:       "SJ-2026/XI/1043",
+				status:          common.StatusReceived,
+				payment:         common.PaymentPaid,
+				hasReceipt:      true,
+				orderDateStr:    "2026-11-11 13:00:00",
+				receivedDateStr: "2026-11-13 15:30:00",
+				paidDateStr:     "2026-11-15 09:00:00",
+				bank:            "Bank Mandiri (1310-0982-4412 a.n. Vendor)",
+			},
+			// 16. PO-2026-016: Diterima Penuh tapi Belum Bayar (Received & Unpaid) - Tagihan Siap Bayar (Multi-Item: 2 barang)
+			{
+				supplier: "PT Sentra Logistik Grafika",
+				items: []itemSeed{
+					{id: "ITEM-116", name: "Kertas Continuous Form 9.5x11 inch 3 Ply", qty: 25, receivedQty: 25, unitCost: 320000},
+					{id: "ITEM-116-B", name: "Pita Ribbon Epson LQ-2190 Original", qty: 20, receivedQty: 20, unitCost: 115000},
+				},
+				receiptNo:       "SJ-2026/XI/1044",
+				status:          common.StatusReceived,
+				payment:         common.PaymentUnpaid,
+				hasReceipt:      true,
+				orderDateStr:    "2026-11-11 14:00:00",
+				receivedDateStr: "2026-11-14 09:30:00",
+				paidDateStr:     "",
+				bank:            "",
+			},
+			// 17. PO-2026-017: Diterima Sebagian (Received Partial & Unpaid) (Multi-Item: 2 barang)
+			{
+				supplier: "CV Tri Sakti Furnitur",
+				items: []itemSeed{
+					{id: "ITEM-117", name: "Kursi Kuliah Lipat Chitose Yamato", qty: 50, receivedQty: 25, unitCost: 485000},
+					{id: "ITEM-117-B", name: "Whiteboard Mobile Stand 120x240 cm", qty: 4, receivedQty: 2, unitCost: 1650000},
+				},
+				receiptNo:       "SJ-2026/XI/1045",
+				status:          common.StatusReceivedPartial,
+				payment:         common.PaymentUnpaid,
+				hasReceipt:      true,
+				orderDateStr:    "2026-11-11 15:00:00",
+				receivedDateStr: "2026-11-14 11:00:00",
+				paidDateStr:     "",
+				bank:            "",
+			},
+			// 18. PO-2026-018: Disetujui (Approved) - Siap dicatat GRN (Multi-Item: 2 barang)
+			{
+				supplier: "PT Harapan Prima Steel",
+				items: []itemSeed{
+					{id: "ITEM-118", name: "Lemari Arsip Besi 4 Pintu Lion Filing", qty: 8, receivedQty: 0, unitCost: 3250000},
+					{id: "ITEM-118-B", name: "Rak Gudang Heavy Duty Slot Angle", qty: 6, receivedQty: 0, unitCost: 1850000},
+				},
+				receiptNo:       "",
+				status:          common.StatusApproved,
+				payment:         common.PaymentUnpaid,
+				hasReceipt:      false,
+				orderDateStr:    "2026-11-12 09:00:00",
+				receivedDateStr: "",
+				paidDateStr:     "",
+				bank:            "",
+			},
+			// 19. PO-2026-019: Baru Diajukan (Submitted / Pending) (Multi-Item: 2 barang)
+			{
+				supplier: "CV Cahaya Solusi Mandiri",
+				items: []itemSeed{
+					{id: "ITEM-119", name: "Hand Sanitizer Gel Jerigen 5 Liter", qty: 20, receivedQty: 0, unitCost: 145000},
+					{id: "ITEM-119-B", name: "Sabun Cuci Tangan Antiseptik 5 Liter", qty: 20, receivedQty: 0, unitCost: 95000},
+				},
+				receiptNo:       "",
+				status:          common.StatusPending,
+				payment:         common.PaymentUnpaid,
+				hasReceipt:      false,
+				orderDateStr:    "2026-11-12 10:30:00",
+				receivedDateStr: "",
+				paidDateStr:     "",
+				bank:            "",
+			},
+			// 20. PO-2026-020: Baru Diajukan (Submitted / Pending) (Multi-Item: 2 barang)
+			{
+				supplier: "PT Mega Daya Elektrik",
+				items: []itemSeed{
+					{id: "ITEM-120", name: "AC Split Inverter Panasonic 2 PK Standard", qty: 5, receivedQty: 0, unitCost: 7850000},
+					{id: "ITEM-120-B", name: "Pipa AC Tembaga Saeki 30 Meter Roll", qty: 3, receivedQty: 0, unitCost: 1250000},
+				},
+				receiptNo:       "",
+				status:          common.StatusPending,
+				payment:         common.PaymentUnpaid,
+				hasReceipt:      false,
+				orderDateStr:    "2026-11-12 11:30:00",
+				receivedDateStr: "",
+				paidDateStr:     "",
+				bank:            "",
+			},
 		}
 
 		for i, itemData := range data {
@@ -334,7 +494,7 @@ func CleanPostgres(db *gorm.DB) error {
 	})
 }
 
-// ResetAndSeedPostgres membersihkan data lama dan mengisi ulang 10 dummy PO & Goods Receipt dengan variasi status realistis.
+// ResetAndSeedPostgres membersihkan data lama dan mengisi ulang 20 dummy PO & Goods Receipt dengan variasi status realistis.
 func ResetAndSeedPostgres(db *gorm.DB) error {
 	if err := CleanPostgres(db); err != nil {
 		return err
